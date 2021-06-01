@@ -1,0 +1,118 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.flink.connectors.http.table;
+
+import org.apache.flink.annotation.Internal;
+import org.apache.flink.configuration.ReadableConfig;
+import org.apache.flink.table.api.TableSchema;
+import org.apache.flink.table.connector.ChangelogMode;
+import org.apache.flink.table.connector.source.AsyncTableFunctionProvider;
+import org.apache.flink.table.connector.source.DynamicTableSource;
+import org.apache.flink.table.connector.source.InputFormatProvider;
+import org.apache.flink.table.connector.source.LookupTableSource;
+import org.apache.flink.table.connector.source.ScanTableSource;
+import org.apache.flink.table.connector.source.TableFunctionProvider;
+import org.apache.flink.table.connector.source.abilities.SupportsProjectionPushDown;
+import org.apache.flink.table.types.logical.RowType;
+
+import java.util.Objects;
+
+import static org.apache.flink.connectors.http.table.HttpOptions.TABLE_NAME;
+
+/** Http table source implementation. */
+@Internal
+public class HttpDynamicTableSource implements ScanTableSource, LookupTableSource, SupportsProjectionPushDown {
+
+	private final String tableName;
+	private TableSchema tableSchema;
+	private final ReadableConfig tableOptions;
+	private final HttpRequestOptions requestOptions;
+	private final HttpLookupOptions lookupOptions;
+
+    public HttpDynamicTableSource(
+            TableSchema tableSchema,
+			ReadableConfig tableOptions) {
+    	this.tableName = tableOptions.get(TABLE_NAME);
+        this.tableSchema = tableSchema;
+        this.tableOptions = tableOptions;
+        this.requestOptions = HttpOptions.getHttpRequestOptions(tableOptions);
+        this.lookupOptions = HttpOptions.getHttpLookupOptions(tableOptions);
+    }
+
+    // left join时调用该方法根据join的key去lookup对应的数据
+    @Override
+    public LookupTableSource.LookupRuntimeProvider getLookupRuntimeProvider(LookupTableSource.LookupContext context) {
+		// TODO add some checks
+        if (lookupOptions.getLookupAsync()) {
+            return AsyncTableFunctionProvider.of(
+                    new HttpRowDataAsyncLookupFunction(tableName, tableSchema, requestOptions, lookupOptions));
+        } else {
+			return TableFunctionProvider.of(new HttpRowDataLookupFunction(tableName, tableSchema));
+        }
+    }
+
+    // select时需要查询数据
+	@Override
+	public ScanRuntimeProvider getScanRuntimeProvider(ScanContext runtimeProviderContext) {
+		return InputFormatProvider.of(new HttpRowDataInputFormat(tableName, tableSchema));
+	}
+
+	@Override
+	public ChangelogMode getChangelogMode() {
+		return ChangelogMode.insertOnly();
+	}
+
+	@Override
+	public boolean supportsNestedProjection() {
+		return false;
+	}
+
+	@Override
+	public void applyProjection(int[][] projectedFields) {
+	}
+
+	@Override
+	public DynamicTableSource copy() {
+		return new HttpDynamicTableSource(tableSchema, tableOptions);
+	}
+
+	@Override
+	public String asSummaryString() {
+		return "HTTP:" + tableName;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof HttpDynamicTableSource)) {
+			return false;
+		}
+		HttpDynamicTableSource that = (HttpDynamicTableSource) o;
+		return Objects.equals(tableName, that.tableName) &&
+			Objects.equals(tableSchema, that.tableSchema) &&
+			Objects.equals(lookupOptions, that.lookupOptions);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(tableName, tableSchema, lookupOptions);
+	}
+}
