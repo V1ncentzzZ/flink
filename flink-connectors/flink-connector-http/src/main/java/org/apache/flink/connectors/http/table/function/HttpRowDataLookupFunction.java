@@ -57,7 +57,10 @@ import scala.Tuple2;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -75,6 +78,8 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	private static final HttpClient httpClient = HttpClient.getInstance(60000);
 
+	private final String[] lookupKeys;
+
 	private final String requestUrl;
 	private final String requestMethod;
 	private final Map<String, String> requestHeaders;
@@ -85,13 +90,16 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	private final HttpRowConverter httpRowConverter;
 
-	private transient Cache<Object, RowData> cache;
+	private transient Cache<Object, List<RowData>> cache;
 
 	public HttpRowDataLookupFunction(
 		TableSchema tableSchema,
-		String[] keyNames, HttpRequestOptions requestOptions,
+		String[] lookupKeys,
+		HttpRequestOptions requestOptions,
 		HttpLookupOptions lookupOptions) {
 //		this.tableSchema = tableSchema;
+
+		this.lookupKeys = lookupKeys;
 
 		this.requestUrl = requestOptions.getRequestUrl();
 		this.requestMethod = requestOptions.getRequestMethod();
@@ -108,22 +116,24 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	/**
 	 * The invoke entry point of lookup function.
-	 * @param orderId the lookup key. Currently only support single key.
+	 * @param params the lookup key. Currently only support single key.
 	 */
-	public void eval(Object orderId) throws IOException {
+	public void eval(Object...params) {
 		int currentRetry = 0;
 		if (cache != null) {
-			RowData cacheRowData = cache.getIfPresent(orderId);
+			List<RowData> cacheRowData = cache.getIfPresent(params);
 			if (cacheRowData != null) {
-				collect(cacheRowData);
+				for (RowData rowData : cacheRowData) {
+					collect(rowData);
+				}
 				return;
 			}
 		}
 		// fetch result
-		fetchResult(currentRetry, orderId);
+		fetchResult(currentRetry, params);
 	}
 
-	private void fetchResult(int currentRetry, Object orderId) {
+	private void fetchResult(int currentRetry, Object...params) {
 		try {
 			Tuple2<Integer, String> resp;
 			if (isPostRequest()) {
@@ -133,37 +143,47 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 						post.addHeader(key, requestHeaders.get(key));
 					}
 				}
+				Map<String, Object> request = new HashMap<>();
+				for (int i = 0; i < params.length; i++) {
+					request.put(lookupKeys[i], String.valueOf(params[i]));
+				}
 				StringEntity entity = new StringEntity(
-					OBJECT_MAPPER.writeValueAsString(Collections.singletonMap("orderId", String.valueOf(orderId))),
+					OBJECT_MAPPER.writeValueAsString(request),
 					StandardCharsets.UTF_8);
 				post.setEntity(entity);
-
 				resp = httpClient.request(post);
 			} else {
-				URIBuilder uriBuilder = new URIBuilder(requestUrl)
-					.addParameter("orderId", String.valueOf(orderId));
+				URIBuilder uriBuilder = new URIBuilder(requestUrl);
+				for (int i = 0; i < params.length; i++) {
+					uriBuilder.addParameter(lookupKeys[i], String.valueOf(params[i]));
+				}
 				HttpGet get = new HttpGet(uriBuilder.build());
-
 				resp = httpClient.request(get);
 			}
-//				Tuple2<Integer, String> resp = new Tuple2(HttpStatus.SC_OK, "{\"orderId\":"+orderId+"}");
 			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
 				String resp2 = resp._2;
 				if (StringUtils.isBlank(resp2)) {
+					collect(new GenericRowData(0));
 					if (cache != null) {
-						collect(new GenericRowData(0));
-						cache.put(orderId, new GenericRowData(0));
+						cache.put(GenericRowData.of(params),
+							Collections.singletonList(new GenericRowData(0)));
 					}
 				} else {
-					Map map = OBJECT_MAPPER.readValue(resp2, Map.class);
-					RowData rowData = httpRowConverter.toInternal(map);
-					collect(rowData);
+					List<Map> respList = OBJECT_MAPPER.readValue(resp2, List.class);
+					ArrayList<RowData> rows = new ArrayList<>();
+					for (Map map : respList) {
+						RowData rowData = httpRowConverter.toInternal(map);
+						rows.add(rowData);
+					}
 					if (cache != null) {
-						cache.put(orderId, rowData);
+						cache.put(GenericRowData.of(params), rows);
+					}
+					for (RowData rowData : rows) {
+						collect(rowData);
 					}
 				}
 			} else {
-				fetchResult(currentRetry + 1, orderId);
+				fetchResult(currentRetry + 1, params);
 			}
 		} catch (Exception e) {
 			throw new RuntimeException(e);

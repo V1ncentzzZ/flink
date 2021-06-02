@@ -56,7 +56,7 @@ public class HttpLookupTableTest {
         String sql2 = "CREATE TABLE http_test (`orderId` int, `orderName` string, `orderStatus` int, `desc` string) "
                 + "WITH ("
 			+ "'connector'='http', "
-			+ "'lookup.async'='true',"
+			+ "'lookup.async'='false',"
 			+ "'request.url'='http://localhost:8080/order', "
 			+ "'request.method'='POST', "
 			+ "'request.headers'='Content-Type:application/json', "
