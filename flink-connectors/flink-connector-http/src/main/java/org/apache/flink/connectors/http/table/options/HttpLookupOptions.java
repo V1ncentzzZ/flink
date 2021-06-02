@@ -31,14 +31,12 @@ public class HttpLookupOptions implements Serializable {
 
     private final long cacheMaxSize;
     private final long cacheExpireMs;
-    private final int maxRetryTimes;
     private final boolean lookupAsync;
 
     public HttpLookupOptions(
-            long cacheMaxSize, long cacheExpireMs, int maxRetryTimes, boolean lookupAsync) {
+            long cacheMaxSize, long cacheExpireMs, boolean lookupAsync) {
         this.cacheMaxSize = cacheMaxSize;
         this.cacheExpireMs = cacheExpireMs;
-        this.maxRetryTimes = maxRetryTimes;
         this.lookupAsync = lookupAsync;
     }
 
@@ -48,10 +46,6 @@ public class HttpLookupOptions implements Serializable {
 
     public long getCacheExpireMs() {
         return cacheExpireMs;
-    }
-
-    public int getMaxRetryTimes() {
-        return maxRetryTimes;
     }
 
     public boolean getLookupAsync() {
@@ -68,7 +62,6 @@ public class HttpLookupOptions implements Serializable {
 			HttpLookupOptions options = (HttpLookupOptions) o;
             return Objects.equals(cacheMaxSize, options.cacheMaxSize)
                     && Objects.equals(cacheExpireMs, options.cacheExpireMs)
-                    && Objects.equals(maxRetryTimes, options.maxRetryTimes)
                     && Objects.equals(lookupAsync, options.lookupAsync);
         } else {
             return false;
@@ -79,7 +72,6 @@ public class HttpLookupOptions implements Serializable {
     public static class Builder {
         private long cacheMaxSize = -1L;
         private long cacheExpireMs = 0L;
-        private int maxRetryTimes = DEFAULT_MAX_RETRY_TIMES;
         private boolean lookupAsync = false;
 
         /** optional, lookup cache max size, over this value, the old data will be eliminated. */
@@ -94,12 +86,6 @@ public class HttpLookupOptions implements Serializable {
             return this;
         }
 
-        /** optional, max retry times for Http connector. */
-        public Builder setMaxRetryTimes(int maxRetryTimes) {
-            this.maxRetryTimes = maxRetryTimes;
-            return this;
-        }
-
         /** optional, whether to set async lookup. */
         public Builder setLookupAsync(boolean lookupAsync) {
             this.lookupAsync = lookupAsync;
@@ -107,7 +93,7 @@ public class HttpLookupOptions implements Serializable {
         }
 
         public HttpLookupOptions build() {
-            return new HttpLookupOptions(cacheMaxSize, cacheExpireMs, maxRetryTimes, lookupAsync);
+            return new HttpLookupOptions(cacheMaxSize, cacheExpireMs, lookupAsync);
         }
     }
 }

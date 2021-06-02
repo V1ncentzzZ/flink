@@ -77,12 +77,6 @@ public class HttpOptions {
                     .defaultValue(Duration.ofSeconds(0))
                     .withDescription("the cache time to live.");
 
-    public static final ConfigOption<Integer> LOOKUP_MAX_RETRIES =
-            ConfigOptions.key("lookup.max-retries")
-                    .intType()
-                    .defaultValue(3)
-                    .withDescription("the max retry times if lookup database failed.");
-
     // --------------------------------------------------------------------------------------------
     // Validation
     // --------------------------------------------------------------------------------------------
@@ -99,7 +93,6 @@ public class HttpOptions {
     public static HttpLookupOptions getHttpLookupOptions(ReadableConfig tableOptions) {
 		HttpLookupOptions.Builder builder = HttpLookupOptions.builder();
         builder.setLookupAsync(tableOptions.get(LOOKUP_ASYNC));
-        builder.setMaxRetryTimes(tableOptions.get(LOOKUP_MAX_RETRIES));
         builder.setCacheExpireMs(tableOptions.get(LOOKUP_CACHE_TTL).toMillis());
         builder.setCacheMaxSize(tableOptions.get(LOOKUP_CACHE_MAX_ROWS));
         return builder.build();

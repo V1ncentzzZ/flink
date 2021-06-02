@@ -26,14 +26,12 @@ import org.apache.flink.table.factories.DynamicTableSourceFactory;
 import org.apache.flink.table.factories.FactoryUtil.TableFactoryHelper;
 import org.apache.flink.table.utils.TableSchemaUtils;
 
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
 import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_ASYNC;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_CACHE_MAX_ROWS;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_CACHE_TTL;
-import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_MAX_RETRIES;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_BATCH_SIZE;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_HEADERS;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_METHOD;
@@ -78,7 +76,6 @@ public class HttpDynamicTableSourceFactory implements DynamicTableSourceFactory 
         set.add(LOOKUP_ASYNC);
         set.add(LOOKUP_CACHE_MAX_ROWS);
         set.add(LOOKUP_CACHE_TTL);
-        set.add(LOOKUP_MAX_RETRIES);
         return set;
     }
 }

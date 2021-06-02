@@ -18,11 +18,11 @@
 
 package org.apache.flink.connectors.http.table.function;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.connectors.http.table.converter.HttpRowConverter;
 import org.apache.flink.connectors.http.table.options.HttpLookupOptions;
 import org.apache.flink.connectors.http.table.options.HttpRequestOptions;
@@ -54,9 +54,14 @@ import scala.Tuple2;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -74,6 +79,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
 	private static final HttpClient httpClient = HttpClient.getInstance(60000);
 
+	private final String[] lookupKeys;
     private final String requestUrl;
     private final String requestMethod;
     private final Map<String, String> requestHeaders;
@@ -81,17 +87,20 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
     private final long cacheMaxSize;
     private final long cacheExpireMs;
-    private final int maxRetryTimes;
 
 	private final HttpRowConverter httpRowConverter;
 
-	private transient Cache<Object, RowData> cache;
+	private transient Set<Object> batchSet;
+	private transient Cache<Object, List<RowData>> cache;
 
     public HttpRowDataAsyncLookupFunction(
-            TableSchema tableSchema,
-            HttpRequestOptions requestOptions,
-            HttpLookupOptions lookupOptions) {
+		TableSchema tableSchema,
+		String[] lookupKeys,
+		HttpRequestOptions requestOptions,
+		HttpLookupOptions lookupOptions) {
 //        this.tableSchema = tableSchema;
+
+		this.lookupKeys = lookupKeys;
 
         this.requestUrl = requestOptions.getRequestUrl();
         this.requestMethod = requestOptions.getRequestMethod();
@@ -100,7 +109,6 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
         this.cacheMaxSize = lookupOptions.getCacheMaxSize();
         this.cacheExpireMs = lookupOptions.getCacheExpireMs();
-        this.maxRetryTimes = lookupOptions.getMaxRetryTimes();
 
 		final RowType rowType = (RowType) tableSchema.toRowDataType().getLogicalType();
 
@@ -111,6 +119,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
     public void open(FunctionContext context) {
         LOG.info("start open ...");
 		try {
+			this.batchSet = requestBatchSize == -1L ? null : new HashSet<>(requestBatchSize.intValue());
             this.cache =
                     cacheMaxSize <= 0 || cacheExpireMs <= 0
                             ? null
@@ -134,23 +143,24 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
      * The invoke entry point of lookup function.
      *
      * @param future The result or exception is returned.
-     * @param orderId the lookup key. Currently only support single rowkey.
+     * @param keys the lookup key. Currently only support single rowkey.
      */
-    public void eval(CompletableFuture<Collection<RowData>> future, Object orderId) {
+    public void eval(CompletableFuture<Collection<RowData>> future, Object...keys) {
         int currentRetry = 0;
         if (cache != null) {
-            RowData cacheRowData = cache.getIfPresent(orderId);
+			RowData keyRow = GenericRowData.of(keys);
+            List<RowData> cacheRowData = cache.getIfPresent(keyRow);
             if (cacheRowData != null) {
-                if (cacheRowData.getArity() == 0) {
+                if (CollectionUtils.isEmpty(cacheRowData)) {
                     future.complete(Collections.emptyList());
                 } else {
-                    future.complete(Collections.singletonList(cacheRowData));
+                    future.complete(cacheRowData);
                 }
                 return;
             }
         }
         // fetch result
-        fetchResult(future, currentRetry, orderId);
+        fetchResult(future, currentRetry, keys);
     }
 
     /**
@@ -158,10 +168,10 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
      *
      * @param resultFuture The result or exception is returned.
      * @param currentRetry Current number of retries.
-     * @param orderId the lookup key.
+     * @param params the lookup key.
      */
     private void fetchResult(
-            CompletableFuture<Collection<RowData>> resultFuture, int currentRetry, Object orderId) {
+            CompletableFuture<Collection<RowData>> resultFuture, int currentRetry, Object...params) {
     	CompletableFuture.runAsync(() -> {
     		try {
 				Tuple2<Integer, String> resp;
@@ -172,17 +182,21 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 							post.addHeader(key, requestHeaders.get(key));
 						}
 					}
+					Map<String, Object> request = new HashMap<>();
+					for (int i = 0; i < params.length; i++) {
+						request.put(lookupKeys[i], String.valueOf(params[i]));
+					}
 					StringEntity entity = new StringEntity(
-						OBJECT_MAPPER.writeValueAsString(Collections.singletonMap("orderId", String.valueOf(orderId))),
+						OBJECT_MAPPER.writeValueAsString(request),
 						StandardCharsets.UTF_8);
 					post.setEntity(entity);
-
 					resp = httpClient.request(post);
 				} else {
-					URIBuilder uriBuilder = new URIBuilder(requestUrl)
-						.addParameter("orderId", String.valueOf(orderId));
+					URIBuilder uriBuilder = new URIBuilder(requestUrl);
+					for (int i = 0; i < params.length; i++) {
+						uriBuilder.addParameter(lookupKeys[i], String.valueOf(params[i]));
+					}
 					HttpGet get = new HttpGet(uriBuilder.build());
-
 					resp = httpClient.request(get);
 				}
 				if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
@@ -190,20 +204,25 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 					if (StringUtils.isBlank(resp2)) {
 						resultFuture.complete(Collections.emptyList());
 						if (cache != null) {
-							cache.put(orderId, new GenericRowData(0));
+							cache.put(GenericRowData.of(params),
+								Collections.singletonList(new GenericRowData(0)));
 						}
 					} else {
-						Map map = OBJECT_MAPPER.readValue(resp2, Map.class);
-						if (cache != null) {
+						List<Map> respList = OBJECT_MAPPER.readValue(resp2, List.class);
+						ArrayList<RowData> rows = new ArrayList<>();
+						for (Map map : respList) {
 							RowData rowData = convertToRow(map);
-							resultFuture.complete(Collections.singletonList(rowData));
-							cache.put(orderId, rowData);
+							rows.add(rowData);
+						}
+						if (cache != null) {
+							resultFuture.complete(rows);
+							cache.put(GenericRowData.of(params), rows);
 						} else {
-							resultFuture.complete(Collections.singletonList(convertToRow(map)));
+							resultFuture.complete(rows);
 						}
 					}
 				} else {
-					fetchResult(resultFuture, currentRetry + 1, orderId);
+					fetchResult(resultFuture, currentRetry + 1, params);
 				}
 			} catch (Exception e) {
 				resultFuture.completeExceptionally(e);

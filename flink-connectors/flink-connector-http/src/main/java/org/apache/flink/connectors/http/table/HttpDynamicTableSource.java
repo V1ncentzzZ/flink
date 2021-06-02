@@ -31,6 +31,7 @@ import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.connector.source.LookupTableSource;
 import org.apache.flink.table.connector.source.TableFunctionProvider;
 import org.apache.flink.table.connector.source.abilities.SupportsProjectionPushDown;
+import org.apache.flink.util.Preconditions;
 
 import java.util.Objects;
 
@@ -55,13 +56,22 @@ public class HttpDynamicTableSource implements LookupTableSource, SupportsProjec
     // left join时调用该方法根据join的key去lookup对应的数据
     @Override
     public LookupTableSource.LookupRuntimeProvider getLookupRuntimeProvider(LookupTableSource.LookupContext context) {
+
+		String[] keyNames = new String[context.getKeys().length];
+		for (int i = 0; i < keyNames.length; i++) {
+			int[] innerKeyArr = context.getKeys()[i];
+			Preconditions.checkArgument(
+				innerKeyArr.length == 1, "HTTP only support non-nested look up keys");
+			keyNames[i] = tableSchema.getFieldNames()[innerKeyArr[0]];
+		}
+
 		// TODO add some checks
         if (lookupOptions.getLookupAsync()) {
             return AsyncTableFunctionProvider.of(
-                    new HttpRowDataAsyncLookupFunction(tableSchema, requestOptions, lookupOptions));
+                    new HttpRowDataAsyncLookupFunction(tableSchema, keyNames, requestOptions, lookupOptions));
         } else {
 			return TableFunctionProvider.of(
-				new HttpRowDataLookupFunction(tableSchema, requestOptions, lookupOptions));
+				new HttpRowDataLookupFunction(tableSchema, keyNames, requestOptions, lookupOptions));
         }
     }
 

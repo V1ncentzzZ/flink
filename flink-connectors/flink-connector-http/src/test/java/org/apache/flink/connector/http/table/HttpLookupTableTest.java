@@ -37,14 +37,19 @@ public class HttpLookupTableTest {
 		StreamTableEnvironment tEnv = StreamTableEnvironment.create(env, envSettings);
 
 		String sql1 = "CREATE TABLE datagen (`id` int, `name` string, `proctime` as PROCTIME()) "
-			+ "WITH ('connector'='datagen')";
+			+ "WITH ("
+			+ "'connector'='datagen', "
+			+ "'rows-per-second'='1', "
+			+ "'fields.id.min'='1', "
+			+ "'fields.id.max'='10' "
+			+ ")";
 		tEnv.executeSql(sql1);
 
 		Table t = tEnv.fromDataStream(env.fromCollection(Arrays.asList(
 			new Tuple2<>(1, "1"),
 			new Tuple2<>(2, "5"),
 			new Tuple2<>(3, "8")
-		)), $("id"), $("id2"), $("proctime").proctime());
+		)), $("id"), $("name"), $("proctime").proctime());
 
 		tEnv.createTemporaryView("T", t);
 
@@ -62,7 +67,7 @@ public class HttpLookupTableTest {
 
 		String sqlQuery = "SELECT source.id, L.`orderId`, L.orderName, L.orderStatus, L.desc FROM T AS source " +
 			"JOIN http_test for system_time as of source.proctime AS L " +
-			"ON source.id = L.orderId";
+			"ON source.id = L.orderId and source.name = L.orderName";
 
 		CloseableIterator<Row> collected = tEnv.executeSql(sqlQuery).collect();
 		List<String> result = Lists.newArrayList(collected).stream()

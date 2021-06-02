@@ -82,16 +82,15 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	private final long cacheMaxSize;
 	private final long cacheExpireMs;
-	private final int maxRetryTimes;
 
 	private final HttpRowConverter httpRowConverter;
 
 	private transient Cache<Object, RowData> cache;
 
 	public HttpRowDataLookupFunction(
-			TableSchema tableSchema,
-			HttpRequestOptions requestOptions,
-			HttpLookupOptions lookupOptions) {
+		TableSchema tableSchema,
+		String[] keyNames, HttpRequestOptions requestOptions,
+		HttpLookupOptions lookupOptions) {
 //		this.tableSchema = tableSchema;
 
 		this.requestUrl = requestOptions.getRequestUrl();
@@ -101,7 +100,6 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 		this.cacheMaxSize = lookupOptions.getCacheMaxSize();
 		this.cacheExpireMs = lookupOptions.getCacheExpireMs();
-		this.maxRetryTimes = lookupOptions.getMaxRetryTimes();
 
 		final RowType rowType = (RowType) tableSchema.toRowDataType().getLogicalType();
 
