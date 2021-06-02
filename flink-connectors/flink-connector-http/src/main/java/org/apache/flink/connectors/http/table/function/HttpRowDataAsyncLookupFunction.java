@@ -16,15 +16,17 @@
  * limitations under the License.
  */
 
-package org.apache.flink.connectors.http.table;
+package org.apache.flink.connectors.http.table.function;
 
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.connectors.http.table.converter.HttpRowConverter;
+import org.apache.flink.connectors.http.table.options.HttpLookupOptions;
+import org.apache.flink.connectors.http.table.options.HttpRequestOptions;
 import org.apache.flink.metrics.Gauge;
-import org.apache.flink.runtime.util.ExecutorThreadFactory;
 
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -37,16 +39,12 @@ import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.shaded.guava18.com.google.common.cache.Cache;
 import org.apache.flink.shaded.guava18.com.google.common.cache.CacheBuilder;
 
-import org.apache.flink.table.runtime.util.JsonUtils;
-import org.apache.flink.table.types.DataType;
-import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.utils.HttpClient;
 
 import org.apache.http.HttpStatus;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.StringEntity;
 import org.slf4j.Logger;
@@ -56,7 +54,6 @@ import scala.Tuple2;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -64,7 +61,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * The HttpRowDataAsyncLookupFunction is an implemenation to lookup Http data by rowkey in async
+ * The HttpRowDataAsyncLookupFunction is an implemenation to lookup Http data by key in async
  * fashion. It looks up the result as {@link RowData}.
  */
 @Internal
@@ -77,12 +74,10 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
 	private static final HttpClient httpClient = HttpClient.getInstance(60000);
 
-    private final String tableName;
-//    private final TableSchema tableSchema;
-
     private final String requestUrl;
     private final String requestMethod;
     private final Map<String, String> requestHeaders;
+    private final Long requestBatchSize;
 
     private final long cacheMaxSize;
     private final long cacheExpireMs;
@@ -92,21 +87,16 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
 	private transient Cache<Object, RowData> cache;
 
-
-    /** The size for thread pool. */
-    private static final int THREAD_POOL_SIZE = 16;
-
     public HttpRowDataAsyncLookupFunction(
-            String tableName,
             TableSchema tableSchema,
             HttpRequestOptions requestOptions,
             HttpLookupOptions lookupOptions) {
-        this.tableName = tableName;
 //        this.tableSchema = tableSchema;
 
         this.requestUrl = requestOptions.getRequestUrl();
         this.requestMethod = requestOptions.getRequestMethod();
         this.requestHeaders = requestOptions.getRequestHeaders();
+        this.requestBatchSize = requestOptions.getRequestBatchSize();
 
         this.cacheMaxSize = lookupOptions.getCacheMaxSize();
         this.cacheExpireMs = lookupOptions.getCacheExpireMs();
@@ -195,7 +185,6 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
 					resp = httpClient.request(get);
 				}
-//				Tuple2<Integer, String> resp = new Tuple2(HttpStatus.SC_OK, "{\"orderId\":"+orderId+"}");
 				if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
 					String resp2 = resp._2;
 					if (StringUtils.isBlank(resp2)) {
@@ -230,11 +219,6 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
     public void close() {
         LOG.info("start close ...");
         LOG.info("end close.");
-    }
-
-    @VisibleForTesting
-    public String getTableName() {
-        return tableName;
     }
 
     private boolean isPostRequest() {

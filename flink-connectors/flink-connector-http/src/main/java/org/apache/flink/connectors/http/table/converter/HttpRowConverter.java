@@ -1,4 +1,4 @@
-package org.apache.flink.connectors.http.table;
+package org.apache.flink.connectors.http.table.converter;
 
 import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericRowData;
@@ -13,7 +13,6 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Date;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -22,6 +21,9 @@ import java.util.Map;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
+/**
+ * Converter that is responsible to convert between http response and Flink SQL internal data structure {@link RowData}.
+ */
 public class HttpRowConverter implements Serializable {
 
 	protected final RowType rowType;
@@ -40,6 +42,11 @@ public class HttpRowConverter implements Serializable {
 		}
 	}
 
+	/**
+	 * Convert data retrieved from http response to internal {@link RowData}.
+	 *
+	 * @param map result from http request
+	 */
 	public RowData toInternal(Map map) throws SQLException {
 		GenericRowData genericRowData = new GenericRowData(map.size());
 		Object[] values = map.values().toArray();
@@ -82,8 +89,6 @@ public class HttpRowConverter implements Serializable {
 				return val -> ((Integer) val).byteValue();
 			case SMALLINT:
 				// Converter for small type that casts value to int and then return short value,
-				// since
-				// JDBC 1.0 use int type for small values.
 				return val -> val instanceof Integer ? ((Integer) val).shortValue() : val;
 			case INTEGER:
 				return val -> val;
@@ -126,14 +131,14 @@ public class HttpRowConverter implements Serializable {
 		}
 	}
 
-	/** Runtime converter to convert JDBC field to {@link RowData} type object. */
+	/** Runtime converter to convert http response's field to {@link RowData} type object. */
 	@FunctionalInterface
 	interface HttpDeserializationConverter extends Serializable {
 		/**
-		 * Convert a jdbc field object of {@link ResultSet} to the internal data structure object.
+		 * Convert a http response's field object to the internal data structure object.
 		 *
-		 * @param jdbcField
+		 * @param field
 		 */
-		Object deserialize(Object jdbcField) throws SQLException;
+		Object deserialize(Object field) throws SQLException;
 	}
 }

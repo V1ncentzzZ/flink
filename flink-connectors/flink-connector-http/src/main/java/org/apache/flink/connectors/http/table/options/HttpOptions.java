@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.connectors.http.table;
+package org.apache.flink.connectors.http.table.options;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.configuration.ConfigOption;
@@ -32,29 +32,29 @@ import java.util.Map;
 @Internal
 public class HttpOptions {
 
-    public static final ConfigOption<String> TABLE_NAME =
-            ConfigOptions.key("table-name")
-                    .stringType()
-                    .noDefaultValue()
-                    .withDescription("The name of Http table to connect.");
-
 	public static final ConfigOption<String> REQUEST_URL =
-		ConfigOptions.key("request.url")
-			.stringType()
-			.noDefaultValue()
-			.withDescription("The url of http table to request.");
+			ConfigOptions.key("request.url")
+				.stringType()
+				.noDefaultValue()
+				.withDescription("The url of http table to request.");
 
 	public static final ConfigOption<String> REQUEST_METHOD =
-		ConfigOptions.key("request.method")
-			.stringType()
-			.defaultValue("POST")
-			.withDescription("The request method to send http request.");
+			ConfigOptions.key("request.method")
+				.stringType()
+				.defaultValue("POST")
+				.withDescription("The request method of http table to request.");
 
 	public static final ConfigOption<Map<String, String>> REQUEST_HEADERS =
-		ConfigOptions.key("request.headers")
-			.mapType()
-			.noDefaultValue()
-			.withDescription("The request headers to send http request.");
+			ConfigOptions.key("request.headers")
+				.mapType()
+				.noDefaultValue()
+				.withDescription("The request headers of http table to request.");
+
+	public static final ConfigOption<Long> REQUEST_BATCH_SIZE =
+			ConfigOptions.key("request.batch.size")
+					.longType()
+					.defaultValue(-1L)
+					.withDescription("The request batch size of http table to request.");
 
     public static final ConfigOption<Boolean> LOOKUP_ASYNC =
             ConfigOptions.key("lookup.async")
@@ -83,9 +83,6 @@ public class HttpOptions {
                     .defaultValue(3)
                     .withDescription("the max retry times if lookup database failed.");
 
-    // Prefix for HTTP specific properties.
-    public static final String PROPERTIES_PREFIX = "properties.";
-
     // --------------------------------------------------------------------------------------------
     // Validation
     // --------------------------------------------------------------------------------------------
@@ -95,6 +92,7 @@ public class HttpOptions {
 		builder.setRequestUrl(tableOptions.get(REQUEST_URL));
 		builder.setRequestMethod(tableOptions.get(REQUEST_METHOD));
 		builder.setRequestHeaders(tableOptions.get(REQUEST_HEADERS));
+		builder.setRequestBatchSize(tableOptions.get(REQUEST_BATCH_SIZE));
 		return builder.build();
 	}
 

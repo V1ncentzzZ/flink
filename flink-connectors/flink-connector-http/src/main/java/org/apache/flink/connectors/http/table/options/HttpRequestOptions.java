@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.connectors.http.table;
+package org.apache.flink.connectors.http.table.options;
 
 import org.apache.flink.annotation.Internal;
 
@@ -32,11 +32,13 @@ public class HttpRequestOptions implements Serializable {
     private final String requestUrl;
     private final String requestMethod;
     private final Map<String, String> requestHeaders;
+	private final Long requestBatchSize;
 
-    public HttpRequestOptions(String requestUrl, String requestMethod, Map<String, String> requestHeaders) {
+    public HttpRequestOptions(String requestUrl, String requestMethod, Map<String, String> requestHeaders, Long requestBatchSize) {
         this.requestUrl = requestUrl;
         this.requestMethod = requestMethod;
         this.requestHeaders = requestHeaders;
+        this.requestBatchSize = requestBatchSize;
     }
 
 	public String getRequestUrl() {
@@ -51,6 +53,10 @@ public class HttpRequestOptions implements Serializable {
 		return requestHeaders;
 	}
 
+	public Long getRequestBatchSize() {
+		return requestBatchSize;
+	}
+
 	public static Builder builder() {
         return new Builder();
     }
@@ -61,7 +67,8 @@ public class HttpRequestOptions implements Serializable {
 			HttpRequestOptions options = (HttpRequestOptions) o;
             return Objects.equals(requestUrl, options.requestUrl)
                     && Objects.equals(requestMethod, options.requestMethod)
-                    && Objects.equals(requestHeaders, options.requestHeaders);
+                    && Objects.equals(requestHeaders, options.requestHeaders)
+                    && Objects.equals(requestBatchSize, options.requestBatchSize);
         } else {
             return false;
         }
@@ -72,6 +79,7 @@ public class HttpRequestOptions implements Serializable {
 		private String requestUrl;
 		private String requestMethod;
 		private Map<String, String> requestHeaders;
+		private Long requestBatchSize;
 
         public Builder setRequestUrl(String requestUrl) {
             this.requestUrl = requestUrl;
@@ -88,8 +96,12 @@ public class HttpRequestOptions implements Serializable {
             return this;
         }
 
-        public HttpRequestOptions build() {
-            return new HttpRequestOptions(requestUrl, requestMethod, requestHeaders);
+		public void setRequestBatchSize(Long requestBatchSize) {
+			this.requestBatchSize = requestBatchSize;
+		}
+
+		public HttpRequestOptions build() {
+            return new HttpRequestOptions(requestUrl, requestMethod, requestHeaders, requestBatchSize);
         }
     }
 }

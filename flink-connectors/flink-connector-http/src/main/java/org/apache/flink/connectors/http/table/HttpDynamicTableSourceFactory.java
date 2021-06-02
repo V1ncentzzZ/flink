@@ -28,17 +28,16 @@ import org.apache.flink.table.utils.TableSchemaUtils;
 
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
-import static org.apache.flink.connectors.http.table.HttpOptions.LOOKUP_ASYNC;
-import static org.apache.flink.connectors.http.table.HttpOptions.LOOKUP_CACHE_MAX_ROWS;
-import static org.apache.flink.connectors.http.table.HttpOptions.LOOKUP_CACHE_TTL;
-import static org.apache.flink.connectors.http.table.HttpOptions.LOOKUP_MAX_RETRIES;
-import static org.apache.flink.connectors.http.table.HttpOptions.REQUEST_HEADERS;
-import static org.apache.flink.connectors.http.table.HttpOptions.REQUEST_METHOD;
-import static org.apache.flink.connectors.http.table.HttpOptions.REQUEST_URL;
-import static org.apache.flink.connectors.http.table.HttpOptions.TABLE_NAME;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_ASYNC;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_CACHE_MAX_ROWS;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_CACHE_TTL;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_MAX_RETRIES;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_BATCH_SIZE;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_HEADERS;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_METHOD;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_URL;
 import static org.apache.flink.table.factories.FactoryUtil.createTableFactoryHelper;
 
 /** Http connector factory. */
@@ -48,7 +47,6 @@ public class HttpDynamicTableSourceFactory implements DynamicTableSourceFactory 
 
     @Override
     public DynamicTableSource createDynamicTableSource(Context context) {
-		System.out.println("stack: " + Arrays.toString(Thread.currentThread().getStackTrace()));
         TableFactoryHelper helper = createTableFactoryHelper(this, context);
         helper.validate();
 
@@ -67,7 +65,6 @@ public class HttpDynamicTableSourceFactory implements DynamicTableSourceFactory 
     @Override
     public Set<ConfigOption<?>> requiredOptions() {
         Set<ConfigOption<?>> set = new HashSet<>();
-        set.add(TABLE_NAME);
         set.add(REQUEST_URL);
         return set;
     }
@@ -77,6 +74,7 @@ public class HttpDynamicTableSourceFactory implements DynamicTableSourceFactory 
         Set<ConfigOption<?>> set = new HashSet<>();
         set.add(REQUEST_METHOD);
         set.add(REQUEST_HEADERS);
+        set.add(REQUEST_BATCH_SIZE);
         set.add(LOOKUP_ASYNC);
         set.add(LOOKUP_CACHE_MAX_ROWS);
         set.add(LOOKUP_CACHE_TTL);

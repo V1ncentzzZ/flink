@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.connectors.http.table;
+package org.apache.flink.connectors.http.table.options;
 
 import org.apache.flink.annotation.Internal;
 

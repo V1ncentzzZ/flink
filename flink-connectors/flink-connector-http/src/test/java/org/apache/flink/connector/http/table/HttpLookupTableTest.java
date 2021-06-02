@@ -52,10 +52,12 @@ public class HttpLookupTableTest {
                 + "WITH ("
 			+ "'connector'='http', "
 			+ "'lookup.async'='true',"
-			+ "'table-name'='test_http', "
 			+ "'request.url'='http://localhost:8080/order', "
 			+ "'request.method'='POST', "
-			+ "'request.headers'='Content-Type:application/json')";
+			+ "'request.headers'='Content-Type:application/json', "
+			+ "'lookup.cache.max-rows'='5', "
+			+ "'lookup.cache.ttl'='1 s' "
+			+ ")";
         tEnv.executeSql(sql2);
 
 		String sqlQuery = "SELECT source.id, L.`orderId`, L.orderName, L.orderStatus, L.desc FROM T AS source " +
