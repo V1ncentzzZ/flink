@@ -33,6 +33,7 @@ import org.apache.flink.shaded.guava18.com.google.common.cache.Cache;
 
 import org.apache.flink.shaded.guava18.com.google.common.cache.CacheBuilder;
 
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonProcessingException;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.flink.table.api.TableSchema;
@@ -56,6 +57,7 @@ import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -135,31 +137,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	private void fetchResult(int currentRetry, Object...params) {
 		try {
-			Tuple2<Integer, String> resp;
-			if (isPostRequest()) {
-				HttpPost post = new HttpPost(requestUrl);
-				if (MapUtils.isNotEmpty(requestHeaders)) {
-					for (String key : requestHeaders.keySet()) {
-						post.addHeader(key, requestHeaders.get(key));
-					}
-				}
-				Map<String, Object> request = new HashMap<>();
-				for (int i = 0; i < params.length; i++) {
-					request.put(lookupKeys[i], String.valueOf(params[i]));
-				}
-				StringEntity entity = new StringEntity(
-					OBJECT_MAPPER.writeValueAsString(request),
-					StandardCharsets.UTF_8);
-				post.setEntity(entity);
-				resp = httpClient.request(post);
-			} else {
-				URIBuilder uriBuilder = new URIBuilder(requestUrl);
-				for (int i = 0; i < params.length; i++) {
-					uriBuilder.addParameter(lookupKeys[i], String.valueOf(params[i]));
-				}
-				HttpGet get = new HttpGet(uriBuilder.build());
-				resp = httpClient.request(get);
-			}
+			Tuple2<Integer, String> resp = isPostRequest() ? doPost(params) : doGet(params);
 			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
 				String resp2 = resp._2;
 				if (StringUtils.isBlank(resp2)) {
@@ -222,5 +200,37 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	private boolean isPostRequest() {
 		return StringUtils.equalsIgnoreCase("POST", requestMethod);
+	}
+
+	private Tuple2<Integer, String> doPost(Object...params) throws IOException {
+		HttpPost post = new HttpPost(requestUrl);
+		if (MapUtils.isNotEmpty(requestHeaders)) {
+			for (String key : requestHeaders.keySet()) {
+				post.addHeader(key, requestHeaders.get(key));
+			}
+		}
+		Map<String, Object> request = new HashMap<>();
+		for (int i = 0; i < params.length; i++) {
+			request.put(lookupKeys[i], String.valueOf(params[i]));
+		}
+		StringEntity entity = new StringEntity(
+			OBJECT_MAPPER.writeValueAsString(request),
+			StandardCharsets.UTF_8);
+		post.setEntity(entity);
+		return httpClient.request(post);
+	}
+
+	private Tuple2<Integer, String> doGet(Object...params) throws IOException, URISyntaxException {
+		URIBuilder uriBuilder = new URIBuilder(requestUrl);
+		for (int i = 0; i < params.length; i++) {
+			uriBuilder.addParameter(lookupKeys[i], String.valueOf(params[i]));
+		}
+		HttpGet get = new HttpGet(uriBuilder.build());
+		if (MapUtils.isNotEmpty(requestHeaders)) {
+			for (String key : requestHeaders.keySet()) {
+				get.addHeader(key, requestHeaders.get(key));
+			}
+		}
+		return httpClient.request(get);
 	}
 }
