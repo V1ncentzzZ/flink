@@ -18,7 +18,6 @@
 
 package org.apache.flink.connectors.http.table.function;
 
-import com.google.common.collect.Lists;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -85,6 +84,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
     private static final Logger LOG = LoggerFactory.getLogger(HttpRowDataAsyncLookupFunction.class);
     private static final long serialVersionUID = 1L;
 
+	private final int fieldCount;
 	private final String[] lookupKeys;
     private final String requestUrl;
     private final String requestMethod;
@@ -117,6 +117,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 		HttpRequestOptions requestOptions,
 		HttpLookupOptions lookupOptions,
 		HttpOptionalOptions optionalOptions) {
+		this.fieldCount = tableSchema.getFieldCount();
 		this.lookupKeys = lookupKeys;
 
         this.requestUrl = requestOptions.getRequestUrl();
@@ -223,15 +224,17 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 		CompletableFuture<Collection<RowData>> resultFuture, Object...params) {
 		CompletableFuture.runAsync(() -> {
 			try {
+				List<Object> requestParams = new ArrayList<>();
+				Collections.addAll(requestParams, params);
 				Tuple2<Integer, String> resp =
-					isPostRequest() ? doPost(Lists.newArrayList(params)) : doGet(Lists.newArrayList(params));
+					isPostRequest() ? doPost(requestParams) : doGet(requestParams);
 				if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
 					String resp2 = resp._2;
 					if (StringUtils.isBlank(resp2)) {
 						resultFuture.complete(Collections.emptyList());
 						if (cache != null) {
 							cache.put(GenericRowData.of(params),
-								Collections.singletonList(new GenericRowData(0)));
+								Collections.singletonList(new GenericRowData(fieldCount)));
 						}
 					} else {
 						List<Map> respList = objectMapper.readValue(resp2, List.class);
@@ -308,7 +311,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 							v.complete(Collections.emptyList());
 							if (cache != null) {
 								cache.put(GenericRowData.of(k),
-									Collections.singletonList(new GenericRowData(0)));
+									Collections.singletonList(new GenericRowData(fieldCount)));
 							}
 						} else {
 							try {
@@ -326,11 +329,9 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 								}
 								System.out.println("k:" + Arrays.toString(k) + " rows: " + rows);
 								if (cache != null) {
-									v.complete(rows);
 									cache.put(GenericRowData.of(k), rows);
-								} else {
-									v.complete(rows);
 								}
+								v.complete(rows);
 							} catch (Exception e) {
 								if (ignoreInvokeErrors) {
 									LOG.error("Failed to fetch result, exception: ", e);
@@ -343,10 +344,8 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 					});
 				}
 			} catch (Exception e) {
-				System.out.println(e);
-				if (ignoreInvokeErrors) {
-					LOG.error("Failed to fetch result, exception: ", e);
-				} else {
+				LOG.error("Failed to fetch result, exception: ", e);
+				if (!ignoreInvokeErrors) {
 					throw new RuntimeException(e);
 				}
 			} finally {

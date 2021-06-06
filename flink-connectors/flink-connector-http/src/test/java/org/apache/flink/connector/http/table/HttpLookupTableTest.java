@@ -68,6 +68,8 @@ public class HttpLookupTableTest {
 			+ ")";
 		tEnv.executeSql(sql2);
 
+		tEnv.executeSql(dataGenSql);
+
 		String sqlQuery = "SELECT source.id, L.`orderId`, L.orderName, L.orderStatus, L.desc FROM T AS source " +
 			"JOIN http_test for system_time as of source.proctime AS L " +
 			"ON source.id = L.orderId";
@@ -113,6 +115,7 @@ public class HttpLookupTableTest {
 			+ "'lookup.cache.ttl'='1 s' "
 			+ ")";
         tEnv.executeSql(sql2);
+
 
 		String sqlQuery = "SELECT source.id, L.`orderId`, L.orderName, L.orderStatus, L.desc FROM T AS source " +
 			"JOIN http_test for system_time as of source.proctime AS L " +

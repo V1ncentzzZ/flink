@@ -18,7 +18,6 @@
 
 package org.apache.flink.connectors.http.table.function;
 
-import com.google.common.collect.Lists;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -88,6 +87,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	private static final Logger LOG = LoggerFactory.getLogger(HttpRowDataLookupFunction.class);
 	private static final long serialVersionUID = 1L;
 
+	private final int fieldCount;
 	private final String[] lookupKeys;
 
 	private final String requestUrl;
@@ -109,12 +109,15 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	private final HttpRowConverter httpRowConverter;
 
+	private volatile boolean processing = false;
+
 	private transient ConcurrentHashMap<Object[], RowData> batchCollection;
 	private transient Cache<Object, List<RowData>> cache;
 	private transient HttpClient httpClient;
 	private transient ObjectMapper objectMapper;
 	private transient ScheduledExecutorService executorService;
 	private transient TableFunctionCollector<RowData> collector;
+	private transient Field collectedField;
 
 	public HttpRowDataLookupFunction(
 		TableSchema tableSchema,
@@ -122,6 +125,8 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 		HttpRequestOptions requestOptions,
 		HttpLookupOptions lookupOptions,
 		HttpOptionalOptions optionalOptions) {
+		this.fieldCount = tableSchema.getFieldCount();
+
 		this.lookupKeys = lookupKeys;
 
 		this.requestUrl = requestOptions.getRequestUrl();
@@ -188,6 +193,9 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 				Field collectorField = superclass.getDeclaredField("collector");
 				collectorField.setAccessible(true);
 				this.collector = (TableFunctionCollector<RowData>) collectorField.get(this);
+
+				this.collectedField = TableFunctionCollector.class.getDeclaredField("collected");
+				collectedField.setAccessible(true);
 			} catch (Exception e) {
 				LOG.error("Failed to get collector by reflection");
 			}
@@ -198,6 +206,14 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 			}
 			if (batchCollection.size() >= requestBatchSize) {
 				triggerFetchResult();
+			} else {
+				try {
+					if (! processing) {
+						collectedField.set(this.collector, true);
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 			}
 			batchCollection.put(keys, (RowData) (this.collector).getInput());
 		} else {
@@ -221,15 +237,17 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	private void fetch(Object...params) {
 		try {
+			List<Object> requestParams = new ArrayList<>();
+			Collections.addAll(requestParams, params);
 			Tuple2<Integer, String> resp =
-				isPostRequest() ? doPost(Lists.newArrayList(params)) : doGet(Lists.newArrayList(params));
+				isPostRequest() ? doPost(requestParams) : doGet(requestParams);
 			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
 				String resp2 = resp._2;
 				if (StringUtils.isBlank(resp2)) {
-					collect(new GenericRowData(0));
+					collect(new GenericRowData(fieldCount));
 					if (cache != null) {
 						cache.put(GenericRowData.of(params),
-							Collections.singletonList(new GenericRowData(0)));
+							Collections.singletonList(new GenericRowData(fieldCount)));
 					}
 				} else {
 					List<Map> respList = objectMapper.readValue(resp2, List.class);
@@ -247,9 +265,8 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 				}
 			}
 		} catch (Exception e) {
-			if (ignoreInvokeErrors) {
-				LOG.error("Failed to fetch result, exception: ", e);
-			} else {
+			LOG.error("Failed to fetch result, exception: ", e);
+			if (!ignoreInvokeErrors) {
 				throw new RuntimeException(e);
 			}
 		}
@@ -265,8 +282,8 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 				if (cacheRowData != null) {
 					LOG.info("found row data from cache: {}", cacheRowData);
 					for (RowData rowData : cacheRowData) {
-						((TableFunctionCollector<RowData>) this.collector).outputResult(rowData);
-//						collect(rowData);
+						LOG.info("cache row data: {}", rowData);
+						this.collector.outputResult(rowData);
 					}
 					it.remove();
 				}
@@ -288,21 +305,24 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	private void batchFetch(List<Object> batchRequestParams,
 							Map<Object[], RowData> unhandCollection) {
 		try {
+			LOG.info("batch fetch result");
 			Tuple2<Integer, String> resp = isPostRequest() ? doPost(batchRequestParams) : doGet(batchRequestParams);
+			LOG.info("resp: {}", resp);
 			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
 				String resp2 = resp._2;
 				unhandCollection.forEach((k, v) -> {
 					if (StringUtils.isBlank(resp2)) {
-						this.collector.outputResult(new JoinedRowData(v, new GenericRowData(0)));
+						JoinedRowData result = new JoinedRowData(v, new GenericRowData(fieldCount));
+						this.collector.outputResult(result);
 						if (cache != null) {
 							cache.put(
 								GenericRowData.of(k),
-								Collections.singletonList(new GenericRowData(0)));
+								Collections.singletonList(result));
 						}
 					} else {
 						try {
 							List<Map> respList = objectMapper.readValue(resp2, List.class);
-							ArrayList<RowData> rows = new ArrayList<>();
+							List<RowData> rows = new ArrayList<>();
 							for (Map res : respList) {
 								boolean b = false;
 								for (int i = 0; i < k.length; i++) {
@@ -311,20 +331,28 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 										convert2JavaType(k[i]));
 								}
 								if (b) {
+									LOG.info("to internal, res: {}", res);
 									RowData rowData = httpRowConverter.toInternal(res);
-									rows.add(rowData);
+									JoinedRowData row = new JoinedRowData(v, rowData);
+									rows.add(row);
+									this.collector.outputResult(row);
 								}
 							}
 							if (cache != null) {
 								cache.put(GenericRowData.of(k), rows);
 							}
-							for (RowData rowData : rows) {
-								this.collector.outputResult(new JoinedRowData(v, rowData));
+							LOG.info("rows: {}", rows);
+							if (rows.size() == 0) {
+								this.collector.outputResult(new JoinedRowData(v, new GenericRowData(fieldCount)));
 							}
+//							for (RowData rowData : rows) {
+//								LOG.info("output result: {}", rowData);
+//								collect(rowData);
+//								this.collector.outputResult(rowData);
+//							}
 						} catch (Exception e) {
-							if (ignoreInvokeErrors) {
-								LOG.error("Failed to fetch result, exception: ", e);
-							} else {
+							LOG.error("Failed to fetch result, exception: ", e);
+							if (!ignoreInvokeErrors) {
 								throw new RuntimeException(e);
 							}
 						}
@@ -332,9 +360,8 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 				});
 			}
 		} catch (Exception e) {
-			if (ignoreInvokeErrors) {
-				LOG.error("Failed to fetch result, exception: ", e);
-			} else {
+			LOG.error("Failed to fetch result, exception: ", e);
+			if (!ignoreInvokeErrors) {
 				throw new RuntimeException(e);
 			}
 		} finally {
@@ -343,6 +370,8 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	}
 
 	private void triggerFetchResult() {
+		this.processing = true;
+		LOG.info("trigger fetch result");
 		if (MapUtils.isNotEmpty(batchCollection)) {
 			Map<Object[], RowData> unhandCollection = new HashMap<>();
 			Iterator<Map.Entry<Object[], RowData>> it = batchCollection
@@ -355,6 +384,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 			}
 			batchFetchResult(unhandCollection);
 		}
+		this.processing = false;
 	}
 
 	@Override
@@ -389,6 +419,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 				requestParameters.get(i) : lookupKeys[i], convert2JavaType(params.get(i)));
 		}
 		System.out.println("request: " + request);
+		LOG.info("request: {}", request);
 		StringEntity entity = new StringEntity(
 			objectMapper.writeValueAsString(request),
 			StandardCharsets.UTF_8);
