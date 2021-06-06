@@ -25,7 +25,13 @@ import org.apache.flink.configuration.ReadableConfig;
 
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
+
+import static org.apache.flink.utils.HttpConstants.DEFAULT_CONNECT_TIMEOUT;
+import static org.apache.flink.utils.HttpConstants.DEFAULT_REQUEST_TIMEOUT;
+import static org.apache.flink.utils.HttpConstants.DEFAULT_RETRY_COUNT;
+import static org.apache.flink.utils.HttpConstants.DEFAULT_SOCKET_TIMEOUT;
 
 
 /** Common Options for HTTP. */
@@ -44,17 +50,54 @@ public class HttpOptions {
 				.defaultValue("POST")
 				.withDescription("The request method of http table to request.");
 
+	public static final ConfigOption<List<String>> REQUEST_PARAMETERS =
+			ConfigOptions.key("request.parameters")
+				.stringType()
+				.asList()
+				.noDefaultValue()
+				.withDescription("The parameter names of http request.");
+
 	public static final ConfigOption<Map<String, String>> REQUEST_HEADERS =
 			ConfigOptions.key("request.headers")
-				.mapType()
-				.noDefaultValue()
-				.withDescription("The request headers of http table to request.");
+					.mapType()
+					.noDefaultValue()
+					.withDescription("The request headers of http table to request.");
 
 	public static final ConfigOption<Long> REQUEST_BATCH_SIZE =
 			ConfigOptions.key("request.batch.size")
 					.longType()
 					.defaultValue(-1L)
 					.withDescription("The request batch size of http table to request.");
+
+	public static final ConfigOption<Duration> REQUEST_SEND_INTERVAL =
+			ConfigOptions.key("request.send.interval")
+					.durationType()
+					.defaultValue(Duration.ofSeconds(1))
+					.withDescription("The request send interval of http table to request.");
+
+	public static final ConfigOption<Duration> REQUEST_TIMEOUT =
+			ConfigOptions.key("request.timeout")
+					.durationType()
+					.defaultValue(Duration.ofMillis(DEFAULT_REQUEST_TIMEOUT))
+					.withDescription("The timeout to send a http request");
+
+	public static final ConfigOption<Integer> REQUEST_MAX_RETRIES =
+			ConfigOptions.key("request.max.retries")
+					.intType()
+					.defaultValue(DEFAULT_RETRY_COUNT)
+					.withDescription("The max retries to send a http request");
+
+	public static final ConfigOption<Duration> REQUEST_SOCKET_TIMEOUT =
+			ConfigOptions.key("request.socket.timeout")
+					.durationType()
+					.defaultValue(Duration.ofMillis(DEFAULT_SOCKET_TIMEOUT))
+					.withDescription("The socket timeout to send a http request");
+
+	public static final ConfigOption<Duration> REQUEST_CONNECT_TIMEOUT =
+			ConfigOptions.key("request.connect.timeout")
+					.durationType()
+					.defaultValue(Duration.ofMillis(DEFAULT_CONNECT_TIMEOUT))
+					.withDescription("The connect timeout to send a http request");
 
     public static final ConfigOption<Boolean> LOOKUP_ASYNC =
             ConfigOptions.key("lookup.async")
@@ -77,6 +120,12 @@ public class HttpOptions {
                     .defaultValue(Duration.ofSeconds(0))
                     .withDescription("the cache time to live.");
 
+	public static final ConfigOption<Boolean> IGNORE_PARSE_ERRORS =
+			ConfigOptions.key("ignore.invoke.errors")
+					.booleanType()
+					.defaultValue(false)
+					.withDescription("Optional flag to skip errors when send a http request, false by default");
+
     // --------------------------------------------------------------------------------------------
     // Validation
     // --------------------------------------------------------------------------------------------
@@ -85,8 +134,14 @@ public class HttpOptions {
 		HttpRequestOptions.Builder builder = HttpRequestOptions.builder();
 		builder.setRequestUrl(tableOptions.get(REQUEST_URL));
 		builder.setRequestMethod(tableOptions.get(REQUEST_METHOD));
+		builder.setRequestParameters(tableOptions.get(REQUEST_PARAMETERS));
 		builder.setRequestHeaders(tableOptions.get(REQUEST_HEADERS));
 		builder.setRequestBatchSize(tableOptions.get(REQUEST_BATCH_SIZE));
+		builder.setRequestSendInterval(tableOptions.get(REQUEST_SEND_INTERVAL).toMillis());
+		builder.setRequestTimeout((int) tableOptions.get(REQUEST_TIMEOUT).toMillis());
+		builder.setRequestMaxRetries(tableOptions.get(REQUEST_MAX_RETRIES));
+		builder.setRequestSocketTimeout((int) tableOptions.get(REQUEST_SOCKET_TIMEOUT).toMillis());
+		builder.setRequestConnectTimout((int) tableOptions.get(REQUEST_CONNECT_TIMEOUT).toMillis());
 		return builder.build();
 	}
 
@@ -97,4 +152,10 @@ public class HttpOptions {
         builder.setCacheMaxSize(tableOptions.get(LOOKUP_CACHE_MAX_ROWS));
         return builder.build();
     }
+
+    public static HttpOptionalOptions getHttpOptionalOptions(ReadableConfig tableOptions) {
+		HttpOptionalOptions.Builder builder = HttpOptionalOptions.builder();
+		builder.setIgnoreInvokeErrors(tableOptions.get(IGNORE_PARSE_ERRORS));
+		return builder.build();
+	}
 }

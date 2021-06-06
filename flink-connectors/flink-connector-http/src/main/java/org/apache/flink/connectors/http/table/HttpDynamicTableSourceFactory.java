@@ -29,12 +29,19 @@ import org.apache.flink.table.utils.TableSchemaUtils;
 import java.util.HashSet;
 import java.util.Set;
 
+import static org.apache.flink.connectors.http.table.options.HttpOptions.IGNORE_PARSE_ERRORS;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_ASYNC;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_CACHE_MAX_ROWS;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.LOOKUP_CACHE_TTL;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_BATCH_SIZE;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_CONNECT_TIMEOUT;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_HEADERS;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_MAX_RETRIES;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_METHOD;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_PARAMETERS;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_SEND_INTERVAL;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_SOCKET_TIMEOUT;
+import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_TIMEOUT;
 import static org.apache.flink.connectors.http.table.options.HttpOptions.REQUEST_URL;
 import static org.apache.flink.table.factories.FactoryUtil.createTableFactoryHelper;
 
@@ -72,10 +79,17 @@ public class HttpDynamicTableSourceFactory implements DynamicTableSourceFactory 
         Set<ConfigOption<?>> set = new HashSet<>();
         set.add(REQUEST_METHOD);
         set.add(REQUEST_HEADERS);
+        set.add(REQUEST_PARAMETERS);
         set.add(REQUEST_BATCH_SIZE);
+        set.add(REQUEST_SEND_INTERVAL);
+        set.add(REQUEST_TIMEOUT);
+        set.add(REQUEST_MAX_RETRIES);
+        set.add(REQUEST_SOCKET_TIMEOUT);
+        set.add(REQUEST_CONNECT_TIMEOUT);
         set.add(LOOKUP_ASYNC);
         set.add(LOOKUP_CACHE_MAX_ROWS);
         set.add(LOOKUP_CACHE_TTL);
+        set.add(IGNORE_PARSE_ERRORS);
         return set;
     }
 }

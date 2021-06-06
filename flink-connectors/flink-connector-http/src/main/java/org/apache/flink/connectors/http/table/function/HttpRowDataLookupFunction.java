@@ -18,14 +18,16 @@
 
 package org.apache.flink.connectors.http.table.function;
 
+import com.google.common.collect.Lists;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.annotation.VisibleForTesting;
 
 import org.apache.flink.connectors.http.table.converter.HttpRowConverter;
 import org.apache.flink.connectors.http.table.options.HttpLookupOptions;
+import org.apache.flink.connectors.http.table.options.HttpOptionalOptions;
 import org.apache.flink.connectors.http.table.options.HttpRequestOptions;
 import org.apache.flink.metrics.Gauge;
 
@@ -33,15 +35,17 @@ import org.apache.flink.shaded.guava18.com.google.common.cache.Cache;
 
 import org.apache.flink.shaded.guava18.com.google.common.cache.CacheBuilder;
 
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonProcessingException;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.data.GenericRowData;
+import org.apache.flink.table.data.JoinedRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.functions.TableFunction;
 
+import org.apache.flink.table.runtime.collector.TableFunctionCollector;
 import org.apache.flink.table.types.logical.RowType;
 
 import org.apache.flink.utils.HttpClient;
@@ -57,14 +61,22 @@ import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * The HttpRowDataLookupFunction is a standard user-defined table function, it can be used in tableAPI
@@ -76,101 +88,73 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	private static final Logger LOG = LoggerFactory.getLogger(HttpRowDataLookupFunction.class);
 	private static final long serialVersionUID = 1L;
 
-	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
-	private static final HttpClient httpClient = HttpClient.getInstance(60000);
-
 	private final String[] lookupKeys;
 
 	private final String requestUrl;
 	private final String requestMethod;
+	private final List<String> requestParameters;
 	private final Map<String, String> requestHeaders;
+	private final boolean enableBatchQuery;
 	private final Long requestBatchSize;
+	private final Long requestSendInterval;
+	private final Integer requestTimeout;
+	private final Integer requestMaxRetries;
+	private final Integer requestSocketTimeout;
+	private final Integer requestConnectTimout;
 
 	private final long cacheMaxSize;
 	private final long cacheExpireMs;
 
+	private final boolean ignoreInvokeErrors;
+
 	private final HttpRowConverter httpRowConverter;
 
+	private transient ConcurrentHashMap<Object[], RowData> batchCollection;
 	private transient Cache<Object, List<RowData>> cache;
+	private transient HttpClient httpClient;
+	private transient ObjectMapper objectMapper;
+	private transient ScheduledExecutorService executorService;
+	private transient TableFunctionCollector<RowData> collector;
 
 	public HttpRowDataLookupFunction(
 		TableSchema tableSchema,
 		String[] lookupKeys,
 		HttpRequestOptions requestOptions,
-		HttpLookupOptions lookupOptions) {
-//		this.tableSchema = tableSchema;
-
+		HttpLookupOptions lookupOptions,
+		HttpOptionalOptions optionalOptions) {
 		this.lookupKeys = lookupKeys;
 
 		this.requestUrl = requestOptions.getRequestUrl();
 		this.requestMethod = requestOptions.getRequestMethod();
+		this.requestParameters = requestOptions.getRequestParameters();
 		this.requestHeaders = requestOptions.getRequestHeaders();
 		this.requestBatchSize = requestOptions.getRequestBatchSize();
+		this.enableBatchQuery = requestBatchSize != -1L;
+		this.requestSendInterval = requestOptions.getRequestSendInterval();
+		this.requestTimeout =  requestOptions.getRequestTimeout();
+		this.requestMaxRetries = requestOptions.getRequestMaxRetries();
+		this.requestSocketTimeout = requestOptions.getRequestSocketTimeout();
+		this.requestConnectTimout = requestOptions.getRequestConnectTimout();
 
 		this.cacheMaxSize = lookupOptions.getCacheMaxSize();
 		this.cacheExpireMs = lookupOptions.getCacheExpireMs();
+
+		this.ignoreInvokeErrors = optionalOptions.isIgnoreInvokeErrors();
 
 		final RowType rowType = (RowType) tableSchema.toRowDataType().getLogicalType();
 
 		this.httpRowConverter = new HttpRowConverter(rowType);
 	}
 
-	/**
-	 * The invoke entry point of lookup function.
-	 * @param params the lookup key. Currently only support single key.
-	 */
-	public void eval(Object...params) {
-		int currentRetry = 0;
-		if (cache != null) {
-			List<RowData> cacheRowData = cache.getIfPresent(params);
-			if (cacheRowData != null) {
-				for (RowData rowData : cacheRowData) {
-					collect(rowData);
-				}
-				return;
-			}
-		}
-		// fetch result
-		fetchResult(currentRetry, params);
-	}
-
-	private void fetchResult(int currentRetry, Object...params) {
-		try {
-			Tuple2<Integer, String> resp = isPostRequest() ? doPost(params) : doGet(params);
-			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
-				String resp2 = resp._2;
-				if (StringUtils.isBlank(resp2)) {
-					collect(new GenericRowData(0));
-					if (cache != null) {
-						cache.put(GenericRowData.of(params),
-							Collections.singletonList(new GenericRowData(0)));
-					}
-				} else {
-					List<Map> respList = OBJECT_MAPPER.readValue(resp2, List.class);
-					ArrayList<RowData> rows = new ArrayList<>();
-					for (Map map : respList) {
-						RowData rowData = httpRowConverter.toInternal(map);
-						rows.add(rowData);
-					}
-					if (cache != null) {
-						cache.put(GenericRowData.of(params), rows);
-					}
-					for (RowData rowData : rows) {
-						collect(rowData);
-					}
-				}
-			} else {
-				fetchResult(currentRetry + 1, params);
-			}
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		}
-	}
-
 	@Override
 	public void open(FunctionContext context) {
 		LOG.info("start open ...");
+		this.httpClient =
+			new HttpClient(requestTimeout, requestMaxRetries, requestSocketTimeout, requestConnectTimout);
+		if (enableBatchQuery) {
+			this.batchCollection = new ConcurrentHashMap<>();
+			this.executorService = Executors.newSingleThreadScheduledExecutor();
+		}
 		try {
 			this.cache =
 				cacheMaxSize <= 0 || cacheExpireMs <= 0
@@ -184,6 +168,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 				context.getMetricGroup()
 					.gauge("lookupCacheHitRate", (Gauge<Double>) () -> cache.stats().hitRate());
 			}
+			this.objectMapper = new ObjectMapper();
 		} catch (Exception e) {
 			LOG.error("Exception while creating connection to Http.", e);
 			throw new RuntimeException("Cannot create connection to Http.", e);
@@ -191,18 +176,207 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 		LOG.info("end open.");
 	}
 
+	/**
+	 * The invoke entry point of lookup function.
+	 * @param keys the lookup key.
+	 */
+	public void eval(Object...keys) {
+		if (collector == null) {
+			try {
+				LOG.info("get collector by reflection");
+				Class<?> superclass = this.getClass().getSuperclass();
+				Field collectorField = superclass.getDeclaredField("collector");
+				collectorField.setAccessible(true);
+				this.collector = (TableFunctionCollector<RowData>) collectorField.get(this);
+			} catch (Exception e) {
+				LOG.error("Failed to get collector by reflection");
+			}
+		}
+		if (enableBatchQuery) {
+			if (MapUtils.isEmpty(batchCollection)) {
+				this.executorService.schedule(this::triggerFetchResult, requestSendInterval, TimeUnit.MILLISECONDS);
+			}
+			if (batchCollection.size() >= requestBatchSize) {
+				triggerFetchResult();
+			}
+			batchCollection.put(keys, (RowData) (this.collector).getInput());
+		} else {
+			fetchResult(keys);
+		}
+	}
+
+	private void fetchResult(Object...params) {
+		if (cache != null) {
+			List<RowData> cacheRowData = cache.getIfPresent(params);
+			if (cacheRowData != null) {
+				for (RowData rowData : cacheRowData) {
+					collect(rowData);
+				}
+				return;
+			}
+		}
+		// fetch result
+		fetch(params);
+	}
+
+	private void fetch(Object...params) {
+		try {
+			Tuple2<Integer, String> resp =
+				isPostRequest() ? doPost(Lists.newArrayList(params)) : doGet(Lists.newArrayList(params));
+			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
+				String resp2 = resp._2;
+				if (StringUtils.isBlank(resp2)) {
+					collect(new GenericRowData(0));
+					if (cache != null) {
+						cache.put(GenericRowData.of(params),
+							Collections.singletonList(new GenericRowData(0)));
+					}
+				} else {
+					List<Map> respList = objectMapper.readValue(resp2, List.class);
+					ArrayList<RowData> rows = new ArrayList<>();
+					for (Map map : respList) {
+						RowData rowData = httpRowConverter.toInternal(map);
+						rows.add(rowData);
+					}
+					if (cache != null) {
+						cache.put(GenericRowData.of(params), rows);
+					}
+					for (RowData rowData : rows) {
+						collect(rowData);
+					}
+				}
+			}
+		} catch (Exception e) {
+			if (ignoreInvokeErrors) {
+				LOG.error("Failed to fetch result, exception: ", e);
+			} else {
+				throw new RuntimeException(e);
+			}
+		}
+	}
+
+	private void batchFetchResult(Map<Object[], RowData> unhandCollection) {
+		if (cache != null) {
+			Iterator<Map.Entry<Object[], RowData>> it = unhandCollection.entrySet().iterator();
+			while(it.hasNext()) {
+				Map.Entry<Object[], RowData> next = it.next();
+				RowData keyRow = GenericRowData.of(next.getKey());
+				List<RowData> cacheRowData = cache.getIfPresent(keyRow);
+				if (cacheRowData != null) {
+					LOG.info("found row data from cache: {}", cacheRowData);
+					for (RowData rowData : cacheRowData) {
+						((TableFunctionCollector<RowData>) this.collector).outputResult(rowData);
+//						collect(rowData);
+					}
+					it.remove();
+				}
+			}
+		}
+
+		List<Object> batchRequestParams = new ArrayList<>();
+		for (int i = 0; i < lookupKeys.length; i++) {
+			List<Object> params = new ArrayList<>();
+			for (Object[] key : unhandCollection.keySet()) {
+				params.add(key[i]);
+			}
+			batchRequestParams.add(params);
+		}
+
+		batchFetch(batchRequestParams, unhandCollection);
+	}
+
+	private void batchFetch(List<Object> batchRequestParams,
+							Map<Object[], RowData> unhandCollection) {
+		try {
+			Tuple2<Integer, String> resp = isPostRequest() ? doPost(batchRequestParams) : doGet(batchRequestParams);
+			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
+				String resp2 = resp._2;
+				unhandCollection.forEach((k, v) -> {
+					if (StringUtils.isBlank(resp2)) {
+						this.collector.outputResult(new JoinedRowData(v, new GenericRowData(0)));
+						if (cache != null) {
+							cache.put(
+								GenericRowData.of(k),
+								Collections.singletonList(new GenericRowData(0)));
+						}
+					} else {
+						try {
+							List<Map> respList = objectMapper.readValue(resp2, List.class);
+							ArrayList<RowData> rows = new ArrayList<>();
+							for (Map res : respList) {
+								boolean b = false;
+								for (int i = 0; i < k.length; i++) {
+									b = Objects.equals(
+										res.get(lookupKeys[i]),
+										convert2JavaType(k[i]));
+								}
+								if (b) {
+									RowData rowData = httpRowConverter.toInternal(res);
+									rows.add(rowData);
+								}
+							}
+							if (cache != null) {
+								cache.put(GenericRowData.of(k), rows);
+							}
+							for (RowData rowData : rows) {
+								this.collector.outputResult(new JoinedRowData(v, rowData));
+							}
+						} catch (Exception e) {
+							if (ignoreInvokeErrors) {
+								LOG.error("Failed to fetch result, exception: ", e);
+							} else {
+								throw new RuntimeException(e);
+							}
+						}
+					}
+				});
+			}
+		} catch (Exception e) {
+			if (ignoreInvokeErrors) {
+				LOG.error("Failed to fetch result, exception: ", e);
+			} else {
+				throw new RuntimeException(e);
+			}
+		} finally {
+			unhandCollection.keySet().forEach(k -> batchCollection.remove(k));
+		}
+	}
+
+	private void triggerFetchResult() {
+		if (MapUtils.isNotEmpty(batchCollection)) {
+			Map<Object[], RowData> unhandCollection = new HashMap<>();
+			Iterator<Map.Entry<Object[], RowData>> it = batchCollection
+				.entrySet()
+				.iterator();
+			while(it.hasNext()) {
+				Map.Entry<Object[], RowData> next = it.next();
+				unhandCollection.put(next.getKey(), next.getValue());
+				it.remove();
+			}
+			batchFetchResult(unhandCollection);
+		}
+	}
+
 	@Override
 	public void close() {
 		LOG.info("start close ...");
+		if(MapUtils.isNotEmpty(batchCollection)) {
+			triggerFetchResult();
+		}
+		if (executorService != null) {
+			executorService.shutdown();
+		}
+		if (collector != null) {
+			collector.close();
+		}
 		LOG.info("end close.");
 	}
-
 
 	private boolean isPostRequest() {
 		return StringUtils.equalsIgnoreCase("POST", requestMethod);
 	}
 
-	private Tuple2<Integer, String> doPost(Object...params) throws IOException {
+	private Tuple2<Integer, String> doPost(List<Object> params) throws IOException {
 		HttpPost post = new HttpPost(requestUrl);
 		if (MapUtils.isNotEmpty(requestHeaders)) {
 			for (String key : requestHeaders.keySet()) {
@@ -210,20 +384,24 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 			}
 		}
 		Map<String, Object> request = new HashMap<>();
-		for (int i = 0; i < params.length; i++) {
-			request.put(lookupKeys[i], String.valueOf(params[i]));
+		for (int i = 0; i < params.size(); i++) {
+			request.put(CollectionUtils.isNotEmpty(requestParameters) ?
+				requestParameters.get(i) : lookupKeys[i], convert2JavaType(params.get(i)));
 		}
+		System.out.println("request: " + request);
 		StringEntity entity = new StringEntity(
-			OBJECT_MAPPER.writeValueAsString(request),
+			objectMapper.writeValueAsString(request),
 			StandardCharsets.UTF_8);
 		post.setEntity(entity);
 		return httpClient.request(post);
 	}
 
-	private Tuple2<Integer, String> doGet(Object...params) throws IOException, URISyntaxException {
+
+
+	private Tuple2<Integer, String> doGet(List<Object> params) throws IOException, URISyntaxException {
 		URIBuilder uriBuilder = new URIBuilder(requestUrl);
-		for (int i = 0; i < params.length; i++) {
-			uriBuilder.addParameter(lookupKeys[i], String.valueOf(params[i]));
+		for (int i = 0; i < params.size(); i++) {
+			uriBuilder.addParameter(lookupKeys[i], String.valueOf(params.get(i)));
 		}
 		HttpGet get = new HttpGet(uriBuilder.build());
 		if (MapUtils.isNotEmpty(requestHeaders)) {
@@ -232,5 +410,15 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 			}
 		}
 		return httpClient.request(get);
+	}
+
+	private Object convert2JavaType(Object o) {
+		if (o instanceof BinaryStringData) {
+			return String.valueOf(o);
+		} else if (o instanceof List) {
+			return ((List) o).stream().map(this::convert2JavaType).collect(Collectors.toList());
+		} else {
+			return o;
+		}
 	}
 }

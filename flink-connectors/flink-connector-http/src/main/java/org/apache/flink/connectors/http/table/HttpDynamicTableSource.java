@@ -23,6 +23,7 @@ import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.connectors.http.table.function.HttpRowDataAsyncLookupFunction;
 import org.apache.flink.connectors.http.table.function.HttpRowDataLookupFunction;
 import org.apache.flink.connectors.http.table.options.HttpLookupOptions;
+import org.apache.flink.connectors.http.table.options.HttpOptionalOptions;
 import org.apache.flink.connectors.http.table.options.HttpOptions;
 import org.apache.flink.connectors.http.table.options.HttpRequestOptions;
 import org.apache.flink.table.api.TableSchema;
@@ -43,6 +44,7 @@ public class HttpDynamicTableSource implements LookupTableSource, SupportsProjec
 	private final ReadableConfig tableOptions;
 	private final HttpRequestOptions requestOptions;
 	private final HttpLookupOptions lookupOptions;
+	private final HttpOptionalOptions optionalOptions;
 
     public HttpDynamicTableSource(
             TableSchema tableSchema,
@@ -51,9 +53,9 @@ public class HttpDynamicTableSource implements LookupTableSource, SupportsProjec
         this.tableOptions = tableOptions;
         this.requestOptions = HttpOptions.getHttpRequestOptions(tableOptions);
         this.lookupOptions = HttpOptions.getHttpLookupOptions(tableOptions);
+        this.optionalOptions = HttpOptions.getHttpOptionalOptions(tableOptions);
     }
 
-    // left join时调用该方法根据join的key去lookup对应的数据
     @Override
     public LookupTableSource.LookupRuntimeProvider getLookupRuntimeProvider(LookupTableSource.LookupContext context) {
 
@@ -67,11 +69,11 @@ public class HttpDynamicTableSource implements LookupTableSource, SupportsProjec
 
 		// TODO add some checks
         if (lookupOptions.getLookupAsync()) {
-            return AsyncTableFunctionProvider.of(
-                    new HttpRowDataAsyncLookupFunction(tableSchema, keyNames, requestOptions, lookupOptions));
+            return AsyncTableFunctionProvider.of(new HttpRowDataAsyncLookupFunction(
+            	tableSchema, keyNames, requestOptions, lookupOptions, optionalOptions));
         } else {
-			return TableFunctionProvider.of(
-				new HttpRowDataLookupFunction(tableSchema, keyNames, requestOptions, lookupOptions));
+			return TableFunctionProvider.of(new HttpRowDataLookupFunction(
+				tableSchema, keyNames, requestOptions, lookupOptions, optionalOptions));
         }
     }
 

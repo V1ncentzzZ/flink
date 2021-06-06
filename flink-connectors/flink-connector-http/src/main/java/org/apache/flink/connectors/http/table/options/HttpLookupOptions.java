@@ -27,7 +27,6 @@ import java.util.Objects;
 @Internal
 public class HttpLookupOptions implements Serializable {
     private static final long serialVersionUID = 1L;
-    private static final int DEFAULT_MAX_RETRY_TIMES = 3;
 
     private final long cacheMaxSize;
     private final long cacheExpireMs;
@@ -67,6 +66,14 @@ public class HttpLookupOptions implements Serializable {
             return false;
         }
     }
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(
+			cacheMaxSize,
+			cacheExpireMs,
+			lookupAsync);
+	}
 
     /** Builder of {@link HttpLookupOptions}. */
     public static class Builder {

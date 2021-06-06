@@ -27,8 +27,16 @@ import static org.apache.flink.table.api.Expressions.$;
  */
 public class HttpLookupTableTest {
 
-    @Test
-    public void testLookup() throws Exception {
+	static String dataGenSql = "CREATE TABLE datagen (`id` int, `name` string, `proctime` as PROCTIME()) "
+		+ "WITH ("
+		+ "'connector'='datagen', "
+		+ "'rows-per-second'='1', "
+		+ "'fields.id.min'='1', "
+		+ "'fields.id.max'='10' "
+		+ ")";
+
+	@Test
+	public void testSyncLookup() throws Exception {
 		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		EnvironmentSettings envSettings = EnvironmentSettings.newInstance()
 			.useBlinkPlanner()
@@ -36,19 +44,58 @@ public class HttpLookupTableTest {
 			.build();
 		StreamTableEnvironment tEnv = StreamTableEnvironment.create(env, envSettings);
 
-		String sql1 = "CREATE TABLE datagen (`id` int, `name` string, `proctime` as PROCTIME()) "
+		Table t = tEnv.fromDataStream(env.fromCollection(Arrays.asList(
+			new Tuple2<>(1, "1"),
+			new Tuple2<>(2, "5"),
+			new Tuple2<>(3, "8"),
+			new Tuple2<>(4, "9"),
+			new Tuple2<>(5, "9")
+		)), $("id"), $("name"), $("proctime").proctime());
+
+		tEnv.createTemporaryView("T", t);
+
+		String sql2 = "CREATE TABLE http_test (`orderId` int, `orderName` string, `orderStatus` int, `desc` string) "
 			+ "WITH ("
-			+ "'connector'='datagen', "
-			+ "'rows-per-second'='1', "
-			+ "'fields.id.min'='1', "
-			+ "'fields.id.max'='10' "
+			+ "'connector'='http', "
+			+ "'lookup.async'='false',"
+			+ "'request.url'='http://localhost:8080/order_post_batch', "
+			+ "'request.method'='POST', "
+			+ "'request.parameters'='orderIds', "
+			+ "'request.headers'='Content-Type:application/json', "
+			+ "'request.batch.size'='2', "
+			+ "'lookup.cache.max-rows'='-1', "
+			+ "'lookup.cache.ttl'='1 s' "
 			+ ")";
-		tEnv.executeSql(sql1);
+		tEnv.executeSql(sql2);
+
+		String sqlQuery = "SELECT source.id, L.`orderId`, L.orderName, L.orderStatus, L.desc FROM T AS source " +
+			"JOIN http_test for system_time as of source.proctime AS L " +
+			"ON source.id = L.orderId";
+
+		CloseableIterator<Row> collected = tEnv.executeSql(sqlQuery).collect();
+		List<String> result = Lists.newArrayList(collected).stream()
+			.map(Row::toString)
+			.sorted()
+			.collect(Collectors.toList());
+
+		System.out.println("size: " + result.size() + " result: " + result);
+	}
+
+    @Test
+    public void testAsyncLookup() throws Exception {
+		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+		EnvironmentSettings envSettings = EnvironmentSettings.newInstance()
+			.useBlinkPlanner()
+			.inStreamingMode()
+			.build();
+		StreamTableEnvironment tEnv = StreamTableEnvironment.create(env, envSettings);
 
 		Table t = tEnv.fromDataStream(env.fromCollection(Arrays.asList(
 			new Tuple2<>(1, "1"),
 			new Tuple2<>(2, "5"),
-			new Tuple2<>(3, "8")
+			new Tuple2<>(3, "8"),
+			new Tuple2<>(4, "9"),
+			new Tuple2<>(3, "9")
 		)), $("id"), $("name"), $("proctime").proctime());
 
 		tEnv.createTemporaryView("T", t);
@@ -57,17 +104,19 @@ public class HttpLookupTableTest {
                 + "WITH ("
 			+ "'connector'='http', "
 			+ "'lookup.async'='true',"
-			+ "'request.url'='http://localhost:8080/order', "
+			+ "'request.url'='http://localhost:8080/order_post_batch', "
 			+ "'request.method'='POST', "
+			+ "'request.parameters'='orderIds;orderNames', "
 			+ "'request.headers'='Content-Type:application/json', "
-			+ "'lookup.cache.max-rows'='5', "
+			+ "'request.batch.size'='2', "
+			+ "'lookup.cache.max-rows'='100', "
 			+ "'lookup.cache.ttl'='1 s' "
 			+ ")";
         tEnv.executeSql(sql2);
 
 		String sqlQuery = "SELECT source.id, L.`orderId`, L.orderName, L.orderStatus, L.desc FROM T AS source " +
 			"JOIN http_test for system_time as of source.proctime AS L " +
-			"ON source.id = L.orderId and source.name = L.orderName";
+			"ON source.id = L.orderId";
 
 		CloseableIterator<Row> collected = tEnv.executeSql(sqlQuery).collect();
 		List<String> result = Lists.newArrayList(collected).stream()
@@ -75,6 +124,6 @@ public class HttpLookupTableTest {
 			.sorted()
 			.collect(Collectors.toList());
 
-		System.out.println("result: " + result);
+		System.out.println("size: " + result.size() + " result: " + result);
     }
 }
