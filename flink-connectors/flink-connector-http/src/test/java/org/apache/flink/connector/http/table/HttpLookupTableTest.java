@@ -108,7 +108,7 @@ public class HttpLookupTableTest {
 			+ "'lookup.async'='true',"
 			+ "'request.url'='http://localhost:8080/order_post_batch', "
 			+ "'request.method'='POST', "
-			+ "'request.parameters'='orderIds;orderNames', "
+			+ "'request.parameters'='orderIds', "
 			+ "'request.headers'='Content-Type:application/json', "
 			+ "'request.batch.size'='2', "
 			+ "'lookup.cache.max-rows'='100', "

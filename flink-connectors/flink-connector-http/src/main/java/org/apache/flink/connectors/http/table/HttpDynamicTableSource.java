@@ -67,7 +67,6 @@ public class HttpDynamicTableSource implements LookupTableSource, SupportsProjec
 			keyNames[i] = tableSchema.getFieldNames()[innerKeyArr[0]];
 		}
 
-		// TODO add some checks
         if (lookupOptions.getLookupAsync()) {
             return AsyncTableFunctionProvider.of(new HttpRowDataAsyncLookupFunction(
             	tableSchema, keyNames, requestOptions, lookupOptions, optionalOptions));
@@ -105,14 +104,15 @@ public class HttpDynamicTableSource implements LookupTableSource, SupportsProjec
 			return false;
 		}
 		HttpDynamicTableSource that = (HttpDynamicTableSource) o;
-		return Objects.equals(tableSchema, that.tableSchema) &&
-			Objects.equals(tableOptions, that.tableOptions) &&
-			Objects.equals(requestOptions, that.requestOptions) &&
-			Objects.equals(lookupOptions, that.lookupOptions);
+		return Objects.equals(tableSchema, that.tableSchema)
+			&& Objects.equals(tableOptions, that.tableOptions)
+			&& Objects.equals(requestOptions, that.requestOptions)
+			&& Objects.equals(lookupOptions, that.lookupOptions)
+			&& Objects.equals(optionalOptions, that.optionalOptions);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(tableSchema, tableOptions, requestOptions, lookupOptions);
+		return Objects.hash(tableSchema, tableOptions, requestOptions, lookupOptions, optionalOptions);
 	}
 }

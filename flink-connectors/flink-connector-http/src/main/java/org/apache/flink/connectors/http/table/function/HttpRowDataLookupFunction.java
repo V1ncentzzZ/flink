@@ -49,11 +49,11 @@ import org.apache.flink.table.types.logical.RowType;
 
 import org.apache.flink.utils.HttpClient;
 
+import org.apache.flink.utils.HttpUtils;
+
 import org.apache.http.HttpStatus;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.entity.StringEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,8 +61,6 @@ import scala.Tuple2;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -136,7 +134,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 		this.requestBatchSize = requestOptions.getRequestBatchSize();
 		this.enableBatchQuery = requestBatchSize != -1L;
 		this.requestSendInterval = requestOptions.getRequestSendInterval();
-		this.requestTimeout =  requestOptions.getRequestTimeout();
+		this.requestTimeout = requestOptions.getRequestTimeout();
 		this.requestMaxRetries = requestOptions.getRequestMaxRetries();
 		this.requestSocketTimeout = requestOptions.getRequestSocketTimeout();
 		this.requestConnectTimout = requestOptions.getRequestConnectTimout();
@@ -155,7 +153,11 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	public void open(FunctionContext context) {
 		LOG.info("start open ...");
 		this.httpClient =
-			new HttpClient(requestTimeout, requestMaxRetries, requestSocketTimeout, requestConnectTimout);
+			new HttpClient(
+				requestTimeout,
+				requestMaxRetries,
+				requestSocketTimeout,
+				requestConnectTimout);
 		if (enableBatchQuery) {
 			this.batchCollection = new ConcurrentHashMap<>();
 			this.executorService = Executors.newSingleThreadScheduledExecutor();
@@ -183,9 +185,10 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 
 	/**
 	 * The invoke entry point of lookup function.
+	 *
 	 * @param keys the lookup key.
 	 */
-	public void eval(Object...keys) {
+	public void eval(Object... keys) {
 		LOG.info("add keys: {}", Arrays.toString(keys));
 		if (collector == null) {
 			try {
@@ -203,13 +206,16 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 		}
 		if (enableBatchQuery) {
 			if (MapUtils.isEmpty(batchCollection)) {
-				this.executorService.schedule(this::triggerFetchResult, requestSendInterval, TimeUnit.MILLISECONDS);
+				this.executorService.schedule(
+					this::triggerFetchResult,
+					requestSendInterval,
+					TimeUnit.MILLISECONDS);
 			}
 			if (batchCollection.size() >= requestBatchSize) {
 				triggerFetchResult();
 			} else {
 				try {
-					if (! processing) {
+					if (!processing) {
 						collectedField.set(this.collector, true);
 					}
 				} catch (Exception e) {
@@ -222,7 +228,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 		}
 	}
 
-	private void fetchResult(Object...params) {
+	private void fetchResult(Object... params) {
 		if (cache != null) {
 			List<RowData> cacheRowData = cache.getIfPresent(params);
 			if (cacheRowData != null) {
@@ -236,18 +242,21 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 		fetch(params);
 	}
 
-	private void fetch(Object...params) {
+	private void fetch(Object... params) {
 		try {
 			List<Object> requestParams = new ArrayList<>();
 			Collections.addAll(requestParams, params);
 			Tuple2<Integer, String> resp =
-				isPostRequest() ? doPost(requestParams) : doGet(requestParams);
+				HttpUtils.isPostRequest(requestMethod)
+					? doPost(requestParams)
+					: doGet(requestParams);
 			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
 				String resp2 = resp._2;
 				if (StringUtils.isBlank(resp2)) {
 					collect(new GenericRowData(fieldCount));
 					if (cache != null) {
-						cache.put(GenericRowData.of(params),
+						cache.put(
+							GenericRowData.of(params),
 							Collections.singletonList(new GenericRowData(fieldCount)));
 					}
 				} else {
@@ -276,7 +285,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	private void batchFetchResult(Map<Object[], RowData> unhandCollection) {
 		if (cache != null) {
 			Iterator<Map.Entry<Object[], RowData>> it = unhandCollection.entrySet().iterator();
-			while(it.hasNext()) {
+			while (it.hasNext()) {
 				Map.Entry<Object[], RowData> next = it.next();
 				RowData keyRow = GenericRowData.of(next.getKey());
 				List<RowData> cacheRowData = cache.getIfPresent(keyRow);
@@ -290,7 +299,9 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 					} else {
 						for (RowData rowData : cacheRowData) {
 							LOG.info("cache row data: {}", rowData);
-							this.collector.outputResult(new JoinedRowData(next.getValue(), rowData));
+							this.collector.outputResult(new JoinedRowData(
+								next.getValue(),
+								rowData));
 						}
 					}
 					it.remove();
@@ -310,35 +321,39 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 		batchFetch(batchRequestParams, unhandCollection);
 	}
 
-	private void batchFetch(List<Object> batchRequestParams,
-							Map<Object[], RowData> unhandCollection) {
+	private void batchFetch(
+		List<Object> batchRequestParams,
+		Map<Object[], RowData> unhandCollection) {
 		try {
 			LOG.info("batch fetch result");
-			Tuple2<Integer, String> resp = isPostRequest() ? doPost(batchRequestParams) : doGet(batchRequestParams);
+			Tuple2<Integer, String> resp =
+				HttpUtils.isPostRequest(requestMethod)
+					? doPost(batchRequestParams)
+					: doGet(batchRequestParams);
 			LOG.info("resp: {}", resp);
 			if (resp._1 == HttpStatus.SC_OK && resp._2 != null) {
 				String resp2 = resp._2;
 				unhandCollection.forEach((k, v) -> {
-					if (StringUtils.isBlank(resp2)) {
-						GenericRowData rowData = new GenericRowData(fieldCount);
-						this.collector.outputResult(new JoinedRowData(v, rowData));
-						if (cache != null) {
-							cache.put(
-								GenericRowData.of(k),
-								Collections.singletonList(rowData));
-						}
-					} else {
-						try {
+					try {
+						if (StringUtils.isBlank(resp2)) {
+							GenericRowData rowData = new GenericRowData(fieldCount);
+							this.collector.outputResult(new JoinedRowData(v, rowData));
+							if (cache != null) {
+								cache.put(
+									GenericRowData.of(k),
+									Collections.singletonList(rowData));
+							}
+						} else {
 							List<Map> respList = objectMapper.readValue(resp2, List.class);
 							List<RowData> rows = new ArrayList<>();
 							for (Map res : respList) {
-								boolean b = false;
+								boolean checkKeys = false;
 								for (int i = 0; i < k.length; i++) {
-									b = Objects.equals(
+									checkKeys = Objects.equals(
 										res.get(lookupKeys[i]),
 										convert2JavaType(k[i]));
 								}
-								if (b) {
+								if (checkKeys) {
 									LOG.info("to internal, res: {}", res);
 									RowData rowData = httpRowConverter.toInternal(res);
 									rows.add(rowData);
@@ -351,20 +366,31 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 							}
 							LOG.info("rows: {}", rows);
 							if (rows.size() == 0) {
-								this.collector.outputResult(new JoinedRowData(v, new GenericRowData(fieldCount)));
+								this.collector.outputResult(new JoinedRowData(
+									v,
+									new GenericRowData(fieldCount)));
 							}
-						} catch (Exception e) {
-							LOG.error("Failed to fetch result, exception: ", e);
-							if (!ignoreInvokeErrors) {
-								throw new RuntimeException(e);
-							}
+
+						}
+					} catch (Exception e) {
+						LOG.error("Failed to fetch result, exception: ", e);
+						if (!ignoreInvokeErrors) {
+							throw new RuntimeException(e);
 						}
 					}
 				});
+			} else {
+				unhandCollection.forEach((k, v) -> this.collector.outputResult(new JoinedRowData(
+					v,
+					new GenericRowData(fieldCount))));
 			}
 		} catch (Exception e) {
 			LOG.error("Failed to fetch result, exception: ", e);
-			if (!ignoreInvokeErrors) {
+			if (ignoreInvokeErrors) {
+				unhandCollection.forEach((k, v) -> this.collector.outputResult(new JoinedRowData(
+					v,
+					new GenericRowData(fieldCount))));
+			} else {
 				throw new RuntimeException(e);
 			}
 		} finally {
@@ -381,7 +407,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 			Iterator<Map.Entry<Object[], RowData>> it = batchCollection
 				.entrySet()
 				.iterator();
-			while(it.hasNext()) {
+			while (it.hasNext()) {
 				Map.Entry<Object[], RowData> next = it.next();
 				unhandCollection.put(next.getKey(), next.getValue());
 				it.remove();
@@ -394,7 +420,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	@Override
 	public void close() {
 		LOG.info("start close ...");
-		if(MapUtils.isNotEmpty(batchCollection)) {
+		if (MapUtils.isNotEmpty(batchCollection)) {
 			triggerFetchResult();
 		}
 		if (executorService != null) {
@@ -406,48 +432,25 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 		LOG.info("end close.");
 	}
 
-	private boolean isPostRequest() {
-		return StringUtils.equalsIgnoreCase("POST", requestMethod);
-	}
-
 	private Tuple2<Integer, String> doPost(List<Object> params) throws IOException {
-		HttpPost post = new HttpPost(requestUrl);
-		if (MapUtils.isNotEmpty(requestHeaders)) {
-			for (String key : requestHeaders.keySet()) {
-				post.addHeader(key, requestHeaders.get(key));
-			}
-		}
-		Map<String, Object> request = new HashMap<>();
-		for (int i = 0; i < params.size(); i++) {
-			request.put(CollectionUtils.isNotEmpty(requestParameters) ?
-				requestParameters.get(i) : lookupKeys[i], convert2JavaType(params.get(i)));
-		}
-		System.out.println("request: " + request);
-		LOG.info("request: {}", request);
-		StringEntity entity = new StringEntity(
-			objectMapper.writeValueAsString(request),
-			StandardCharsets.UTF_8);
-		post.setEntity(entity);
+		HttpPost post = HttpUtils.wrapPostRequest(
+			requestUrl,
+			requestHeaders,
+			CollectionUtils.isNotEmpty(requestParameters) ? requestParameters : Arrays.asList(lookupKeys),
+			params.stream().map(this::convert2JavaType).collect(Collectors.toList()));
 		return httpClient.request(post);
 	}
 
-
-
-	private Tuple2<Integer, String> doGet(List<Object> params) throws IOException, URISyntaxException {
-		URIBuilder uriBuilder = new URIBuilder(requestUrl);
-		for (int i = 0; i < params.size(); i++) {
-			uriBuilder.addParameter(lookupKeys[i], String.valueOf(params.get(i)));
-		}
-		HttpGet get = new HttpGet(uriBuilder.build());
-		if (MapUtils.isNotEmpty(requestHeaders)) {
-			for (String key : requestHeaders.keySet()) {
-				get.addHeader(key, requestHeaders.get(key));
-			}
-		}
+	private Tuple2<Integer, String> doGet(List<Object> params) throws Exception {
+		HttpGet get = HttpUtils.wrapGetRequest(
+			requestUrl,
+			requestHeaders,
+			Arrays.asList(lookupKeys),
+			params);
 		return httpClient.request(get);
 	}
 
-	private Object convert2JavaType(Object o) {
+	public Object convert2JavaType(Object o) {
 		if (o instanceof BinaryStringData) {
 			return String.valueOf(o);
 		} else if (o instanceof List) {
