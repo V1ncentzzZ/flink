@@ -186,6 +186,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	 * @param keys the lookup key.
 	 */
 	public void eval(Object...keys) {
+		LOG.info("add keys: {}", Arrays.toString(keys));
 		if (collector == null) {
 			try {
 				LOG.info("get collector by reflection");
@@ -281,9 +282,16 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 				List<RowData> cacheRowData = cache.getIfPresent(keyRow);
 				if (cacheRowData != null) {
 					LOG.info("found row data from cache: {}", cacheRowData);
-					for (RowData rowData : cacheRowData) {
-						LOG.info("cache row data: {}", rowData);
-						this.collector.outputResult(rowData);
+					if (CollectionUtils.isEmpty(cacheRowData)) {
+						JoinedRowData result = new JoinedRowData(
+							next.getValue(),
+							new GenericRowData(fieldCount));
+						this.collector.outputResult(result);
+					} else {
+						for (RowData rowData : cacheRowData) {
+							LOG.info("cache row data: {}", rowData);
+							this.collector.outputResult(new JoinedRowData(next.getValue(), rowData));
+						}
 					}
 					it.remove();
 				}
@@ -312,12 +320,12 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 				String resp2 = resp._2;
 				unhandCollection.forEach((k, v) -> {
 					if (StringUtils.isBlank(resp2)) {
-						JoinedRowData result = new JoinedRowData(v, new GenericRowData(fieldCount));
-						this.collector.outputResult(result);
+						GenericRowData rowData = new GenericRowData(fieldCount);
+						this.collector.outputResult(new JoinedRowData(v, rowData));
 						if (cache != null) {
 							cache.put(
 								GenericRowData.of(k),
-								Collections.singletonList(result));
+								Collections.singletonList(rowData));
 						}
 					} else {
 						try {
@@ -333,9 +341,9 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 								if (b) {
 									LOG.info("to internal, res: {}", res);
 									RowData rowData = httpRowConverter.toInternal(res);
-									JoinedRowData row = new JoinedRowData(v, rowData);
-									rows.add(row);
-									this.collector.outputResult(row);
+									rows.add(rowData);
+									JoinedRowData output = new JoinedRowData(v, rowData);
+									this.collector.outputResult(output);
 								}
 							}
 							if (cache != null) {
@@ -345,11 +353,6 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 							if (rows.size() == 0) {
 								this.collector.outputResult(new JoinedRowData(v, new GenericRowData(fieldCount)));
 							}
-//							for (RowData rowData : rows) {
-//								LOG.info("output result: {}", rowData);
-//								collect(rowData);
-//								this.collector.outputResult(rowData);
-//							}
 						} catch (Exception e) {
 							LOG.error("Failed to fetch result, exception: ", e);
 							if (!ignoreInvokeErrors) {
@@ -370,6 +373,7 @@ public class HttpRowDataLookupFunction extends TableFunction<RowData> {
 	}
 
 	private void triggerFetchResult() {
+		LOG.info("thread name: {}", Thread.currentThread().getName());
 		this.processing = true;
 		LOG.info("trigger fetch result");
 		if (MapUtils.isNotEmpty(batchCollection)) {
