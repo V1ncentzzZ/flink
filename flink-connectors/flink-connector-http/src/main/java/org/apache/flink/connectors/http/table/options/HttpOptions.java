@@ -28,6 +28,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
+import static org.apache.flink.connectors.http.table.deserialization.HttpJsonFormatFactory.IDENTIFIER;
 import static org.apache.flink.utils.HttpConstants.DEFAULT_CONNECT_TIMEOUT;
 import static org.apache.flink.utils.HttpConstants.DEFAULT_REQUEST_TIMEOUT;
 import static org.apache.flink.utils.HttpConstants.DEFAULT_RETRY_COUNT;
@@ -40,22 +41,22 @@ public class HttpOptions {
 
 	public static final ConfigOption<String> REQUEST_URL =
 			ConfigOptions.key("request.url")
-				.stringType()
-				.noDefaultValue()
-				.withDescription("The url of http table to request.");
+					.stringType()
+					.noDefaultValue()
+					.withDescription("The url of http table to request.");
 
 	public static final ConfigOption<String> REQUEST_METHOD =
 			ConfigOptions.key("request.method")
-				.stringType()
-				.defaultValue("POST")
-				.withDescription("The request method of http table to request.");
+					.stringType()
+					.defaultValue("POST")
+					.withDescription("The request method of http table to request.");
 
 	public static final ConfigOption<List<String>> REQUEST_PARAMETERS =
 			ConfigOptions.key("request.parameters")
-				.stringType()
-				.asList()
-				.noDefaultValue()
-				.withDescription("The parameter names of http request.");
+					.stringType()
+					.asList()
+					.noDefaultValue()
+					.withDescription("The parameter names of http request.");
 
 	public static final ConfigOption<Map<String, String>> REQUEST_HEADERS =
 			ConfigOptions.key("request.headers")
@@ -120,11 +121,20 @@ public class HttpOptions {
                     .defaultValue(Duration.ofSeconds(0))
                     .withDescription("the cache time to live.");
 
-	public static final ConfigOption<Boolean> IGNORE_PARSE_ERRORS =
+	public static final ConfigOption<Boolean> IGNORE_INVOKE_ERRORS =
 			ConfigOptions.key("ignore.invoke.errors")
 					.booleanType()
 					.defaultValue(false)
 					.withDescription("Optional flag to skip errors when send a http request, false by default");
+
+	public static final ConfigOption<List<String>> RESPONSE_DATA_FIELDS =
+			ConfigOptions.key("response.data.fields")
+					.stringType()
+					.asList()
+					.noDefaultValue()
+					.withDescription("The data fields of response.");
+
+	public static final String FORMAT_PROPERTIES_PREFIX = IDENTIFIER + ".";
 
     // --------------------------------------------------------------------------------------------
     // Validation
@@ -155,7 +165,7 @@ public class HttpOptions {
 
     public static HttpOptionalOptions getHttpOptionalOptions(ReadableConfig tableOptions) {
 		HttpOptionalOptions.Builder builder = HttpOptionalOptions.builder();
-		builder.setIgnoreInvokeErrors(tableOptions.get(IGNORE_PARSE_ERRORS));
+		builder.setIgnoreInvokeErrors(tableOptions.get(IGNORE_INVOKE_ERRORS));
 		return builder.build();
 	}
 }

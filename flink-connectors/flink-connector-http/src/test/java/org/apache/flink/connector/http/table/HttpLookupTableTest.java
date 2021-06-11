@@ -58,13 +58,13 @@ public class HttpLookupTableTest {
 			+ "WITH ("
 			+ "'connector'='http', "
 			+ "'lookup.async'='false',"
-			+ "'request.url'='http://localhost:8080/order_post_batch', "
+			+ "'request.url'='http://localhost:8080/order_post', "
 			+ "'request.method'='POST', "
-			+ "'request.parameters'='orderIds', "
 			+ "'request.headers'='Content-Type:application/json', "
-			+ "'request.batch.size'='2', "
 			+ "'lookup.cache.max-rows'='-1', "
-			+ "'lookup.cache.ttl'='1 s' "
+			+ "'lookup.cache.ttl'='1 s', "
+			+ "'format'='http-json', "
+			+ "'http-json.response.data.fields'='data' "
 			+ ")";
 		tEnv.executeSql(sql2);
 
@@ -106,13 +106,16 @@ public class HttpLookupTableTest {
                 + "WITH ("
 			+ "'connector'='http', "
 			+ "'lookup.async'='true',"
-			+ "'request.url'='http://localhost:8080/order_post_batch', "
+			+ "'request.url'='http://localhost:8080/order_post_batch_result', "
 			+ "'request.method'='POST', "
 			+ "'request.parameters'='orderIds', "
 			+ "'request.headers'='Content-Type:application/json', "
 			+ "'request.batch.size'='2', "
 			+ "'lookup.cache.max-rows'='100', "
-			+ "'lookup.cache.ttl'='1 s' "
+			+ "'lookup.cache.ttl'='1 s', "
+			+ "'format'='http-json', "
+			+ "'http-json.ignore-parse-errors'='true', "
+			+ "'http-json.response.data.fields'='data' "
 			+ ")";
         tEnv.executeSql(sql2);
 

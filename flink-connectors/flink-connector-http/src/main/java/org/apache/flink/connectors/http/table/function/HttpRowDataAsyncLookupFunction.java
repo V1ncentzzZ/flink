@@ -23,13 +23,11 @@ import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.connectors.http.table.converter.HttpRowConverter;
+import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.connectors.http.table.options.HttpLookupOptions;
 import org.apache.flink.connectors.http.table.options.HttpOptionalOptions;
 import org.apache.flink.connectors.http.table.options.HttpRequestOptions;
 import org.apache.flink.metrics.Gauge;
-
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.data.GenericRowData;
@@ -41,6 +39,9 @@ import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.shaded.guava18.com.google.common.cache.Cache;
 import org.apache.flink.shaded.guava18.com.google.common.cache.CacheBuilder;
 
+import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.DecimalType;
+import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.utils.HttpClient;
 
@@ -55,7 +56,8 @@ import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 import java.io.IOException;
-import java.sql.SQLException;
+import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -72,6 +74,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static org.apache.flink.util.Preconditions.checkArgument;
+
 /**
  * The HttpRowDataAsyncLookupFunction is an implemenation to lookup Http data by key in async
  * fashion. It looks up the result as {@link RowData}.
@@ -84,6 +88,8 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
 	private final int fieldCount;
 	private final String[] lookupKeys;
+	private final Integer[] lookupKeyIndexes;
+	private final LogicalType[] lookupKeyTypes;
 	private final String requestUrl;
 	private final String requestMethod;
 	private final List<String> requestParameters;
@@ -101,12 +107,11 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
 	private final boolean ignoreInvokeErrors;
 
-	private final HttpRowConverter httpRowConverter;
+	private final DeserializationSchema<List<RowData>> deserializationSchema;
 
 	private transient ConcurrentHashMap<Object[], CompletableFuture<Collection<RowData>>> batchCollection;
 	private transient Cache<Object, List<RowData>> cache;
 	private transient HttpClient httpClient;
-	private transient ObjectMapper objectMapper;
 	private transient ScheduledExecutorService executorService;
 
 	public HttpRowDataAsyncLookupFunction(
@@ -114,9 +119,32 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 		String[] lookupKeys,
 		HttpRequestOptions requestOptions,
 		HttpLookupOptions lookupOptions,
-		HttpOptionalOptions optionalOptions) {
+		HttpOptionalOptions optionalOptions,
+		DeserializationSchema<List<RowData>> deserializationSchema) {
+
+		final RowType rowType = (RowType) tableSchema.toRowDataType().getLogicalType();
+		List<String> fieldNames = Arrays.asList(tableSchema.getFieldNames());
+		DataType[] fieldTypes = tableSchema.getFieldDataTypes();
+
 		this.fieldCount = tableSchema.getFieldCount();
 		this.lookupKeys = lookupKeys;
+		this.lookupKeyIndexes =
+			Arrays
+				.stream(lookupKeys)
+				.map(rowType::getFieldIndex)
+				.toArray(Integer[]::new);
+		this.lookupKeyTypes =
+			Arrays.stream(lookupKeys)
+				.map(
+					s -> {
+						checkArgument(
+							fieldNames.contains(s),
+							"keyName %s can't find in fieldNames %s.",
+							s,
+							fieldNames);
+						return fieldTypes[fieldNames.indexOf(s)].getLogicalType();
+					})
+				.toArray(LogicalType[]::new);
 
 		this.requestUrl = requestOptions.getRequestUrl();
 		this.requestMethod = requestOptions.getRequestMethod();
@@ -135,9 +163,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 
 		this.ignoreInvokeErrors = optionalOptions.isIgnoreInvokeErrors();
 
-		final RowType rowType = (RowType) tableSchema.toRowDataType().getLogicalType();
-
-		this.httpRowConverter = new HttpRowConverter(rowType);
+		this.deserializationSchema = deserializationSchema;
 	}
 
 	@Override
@@ -163,10 +189,11 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 					.maximumSize(cacheMaxSize)
 					.build();
 			if (cache != null && context != null) {
+				LOG.info("register metric: {}", "lookupCacheHitRate");
+				DecimalFormat df = new DecimalFormat("0.00");
 				context.getMetricGroup()
-					.gauge("lookupCacheHitRate", (Gauge<Double>) () -> cache.stats().hitRate());
+					.gauge("lookupCacheHitRate", (Gauge<Double>) () -> Double.parseDouble(df.format(cache.stats().hitRate())) * 100);
 			}
-			this.objectMapper = new ObjectMapper();
 		} catch (Exception e) {
 			LOG.error("Exception while creating connection to Http.", e);
 			throw new RuntimeException("Cannot create connection to Http.", e);
@@ -183,6 +210,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 	public void eval(CompletableFuture<Collection<RowData>> future, Object... keys) {
 		if (enableBatchQuery) {
 			if (MapUtils.isEmpty(batchCollection)) {
+				LOG.info("scheduling...");
 				this.executorService.schedule(
 					this::triggerFetchResult,
 					requestSendInterval,
@@ -203,7 +231,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 			RowData keyRow = GenericRowData.of(keys);
 			List<RowData> cacheRowData = cache.getIfPresent(keyRow);
 			if (cacheRowData != null) {
-				LOG.debug("found row data from cache: {}", cacheRowData);
+				LOG.info("found row data from cache: {}", cacheRowData);
 				if (CollectionUtils.isEmpty(cacheRowData)) {
 					future.complete(Collections.emptyList());
 				} else {
@@ -244,12 +272,8 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 								Collections.singletonList(new GenericRowData(fieldCount)));
 						}
 					} else {
-						List<Map> respList = objectMapper.readValue(resp2, List.class);
-						ArrayList<RowData> rows = new ArrayList<>();
-						for (Map map : respList) {
-							RowData rowData = convertToRow(map);
-							rows.add(rowData);
-						}
+						List<RowData> rows =
+							deserializationSchema.deserialize(resp2.getBytes(StandardCharsets.UTF_8));
 						if (cache != null) {
 							resultFuture.complete(rows);
 							cache.put(GenericRowData.of(params), rows);
@@ -324,17 +348,17 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 										Collections.singletonList(new GenericRowData(fieldCount)));
 								}
 							} else {
-								List<Map> respList = objectMapper.readValue(resp2, List.class);
-								ArrayList<RowData> rows = new ArrayList<>();
-								for (Map res : respList) {
+								List<RowData> deserialize =
+									deserializationSchema.deserialize(resp2.getBytes(StandardCharsets.UTF_8));
+								List<RowData> rows = new ArrayList<>();
+								for (RowData rowData : deserialize) {
 									boolean checkKeys = false;
 									for (int i = 0; i < k.length; i++) {
 										checkKeys = Objects.equals(
-											res.get(lookupKeys[i]),
-											convert2JavaType(k[i]));
+											getValue(rowData, lookupKeyTypes[i], lookupKeyIndexes[i]),
+											k[i]);
 									}
 									if (checkKeys) {
-										RowData rowData = convertToRow(res);
 										rows.add(rowData);
 									}
 								}
@@ -342,7 +366,6 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 									cache.put(GenericRowData.of(k), rows);
 								}
 								v.complete(rows);
-
 							}
 						} catch (Exception e) {
 							LOG.error("Failed to fetch result, exception: ", e);
@@ -368,6 +391,35 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 				unhandCollection.keySet().forEach(k -> batchCollection.remove(k));
 			}
 		});
+	}
+
+	protected Object getValue(RowData rowData, LogicalType type, Integer pos) {
+		switch (type.getTypeRoot()) {
+			case BOOLEAN:
+				return rowData.getBoolean(pos);
+			case FLOAT:
+				return rowData.getFloat(pos);
+			case DOUBLE:
+				return rowData.getDouble(pos);
+			case SMALLINT:
+				return rowData.getShort(pos);
+			case INTEGER:
+				return rowData.getInt(pos);
+			case BIGINT:
+				return rowData.getLong(pos);
+			case DECIMAL:
+				final int precision = ((DecimalType) type).getPrecision();
+				final int scale = ((DecimalType) type).getScale();
+				// using decimal(20, 0) to support db type bigint unsigned, user should define decimal(20, 0) in SQL,
+				// but other precision like decimal(30, 0) can work too from lenient consideration.
+				return rowData.getDecimal(pos, precision, scale);
+			case VARCHAR:
+				return rowData.getString(pos).toString();
+			case BINARY:
+				return rowData.getBinary(pos);
+			default:
+				throw new UnsupportedOperationException("Unsupported type:" + type);
+		}
 	}
 
 	private void triggerFetchResult() {
@@ -415,10 +467,6 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
 			Arrays.asList(lookupKeys),
 			params);
 		return httpClient.request(get);
-	}
-
-	private RowData convertToRow(Map map) throws SQLException {
-		return httpRowConverter.toInternal(map);
 	}
 
 	public Object convert2JavaType(Object o) {

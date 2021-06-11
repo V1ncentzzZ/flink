@@ -14,3 +14,4 @@
 # limitations under the License.
 
 org.apache.flink.connectors.http.table.HttpDynamicTableSourceFactory
+org.apache.flink.connectors.http.table.deserialization.HttpJsonFormatFactory

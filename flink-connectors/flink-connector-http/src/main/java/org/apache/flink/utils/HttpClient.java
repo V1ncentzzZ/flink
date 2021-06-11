@@ -50,7 +50,10 @@ public class HttpClient {
     connManager.setDefaultMaxPerRoute(10);
     CloseableHttpClient httpClient = HttpClients.custom()
             .setConnectionManager(connManager)
-            .setRetryHandler(new DefaultHttpRequestRetryHandler(retryCount == null ? HttpConstants.DEFAULT_RETRY_COUNT : retryCount, true))
+            .setRetryHandler(
+            	new DefaultHttpRequestRetryHandler(retryCount == null
+					? HttpConstants.DEFAULT_RETRY_COUNT
+					: retryCount, true))
             .build();
     return httpClient;
   }

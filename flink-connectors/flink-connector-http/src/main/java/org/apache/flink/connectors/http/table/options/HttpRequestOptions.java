@@ -200,7 +200,8 @@ public class HttpRequestOptions implements Serializable {
 		}
 
 		public HttpRequestOptions build() {
-            return new HttpRequestOptions(requestUrl,
+            return new HttpRequestOptions(
+            	requestUrl,
 				requestMethod,
 				requestParameters,
 				requestHeaders,
