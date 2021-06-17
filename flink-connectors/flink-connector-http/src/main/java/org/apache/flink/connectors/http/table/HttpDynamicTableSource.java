@@ -45,19 +45,19 @@ import java.util.Objects;
 @Internal
 public class HttpDynamicTableSource implements LookupTableSource, SupportsProjectionPushDown {
 
-	private final TableSchema tableSchema;
-	private final ReadableConfig tableOptions;
-	private final HttpRequestOptions requestOptions;
-	private final HttpLookupOptions lookupOptions;
-	private final HttpOptionalOptions optionalOptions;
-	private final DataType outputDataType;
-	private final DecodingFormat<DeserializationSchema<List<RowData>>> decodingFormat;
+    private final TableSchema tableSchema;
+    private final ReadableConfig tableOptions;
+    private final HttpRequestOptions requestOptions;
+    private final HttpLookupOptions lookupOptions;
+    private final HttpOptionalOptions optionalOptions;
+    private final DataType outputDataType;
+    private final DecodingFormat<DeserializationSchema<List<RowData>>> decodingFormat;
 
     public HttpDynamicTableSource(
-		TableSchema tableSchema,
-		ReadableConfig tableOptions,
-		DataType outputDataType,
-		DecodingFormat<DeserializationSchema<List<RowData>>> decodingFormat) {
+            TableSchema tableSchema,
+            ReadableConfig tableOptions,
+            DataType outputDataType,
+            DecodingFormat<DeserializationSchema<List<RowData>>> decodingFormat) {
         this.tableSchema = tableSchema;
         this.tableOptions = tableOptions;
         this.requestOptions = HttpOptions.getHttpRequestOptions(tableOptions);
@@ -68,78 +68,87 @@ public class HttpDynamicTableSource implements LookupTableSource, SupportsProjec
     }
 
     @Override
-    public LookupTableSource.LookupRuntimeProvider getLookupRuntimeProvider(LookupTableSource.LookupContext context) {
+    public LookupTableSource.LookupRuntimeProvider getLookupRuntimeProvider(
+            LookupTableSource.LookupContext context) {
 
-		String[] keyNames = new String[context.getKeys().length];
-		for (int i = 0; i < keyNames.length; i++) {
-			int[] innerKeyArr = context.getKeys()[i];
-			Preconditions.checkArgument(
-				innerKeyArr.length == 1, "HTTP connector only support non-nested look up keys");
-			keyNames[i] = tableSchema.getFieldNames()[innerKeyArr[0]];
-		}
+        String[] keyNames = new String[context.getKeys().length];
+        for (int i = 0; i < keyNames.length; i++) {
+            int[] innerKeyArr = context.getKeys()[i];
+            Preconditions.checkArgument(
+                    innerKeyArr.length == 1, "HTTP connector only support non-nested look up keys");
+            keyNames[i] = tableSchema.getFieldNames()[innerKeyArr[0]];
+        }
 
-		DeserializationSchema<List<RowData>> deserializationSchema =
-			this.decodingFormat.createRuntimeDecoder(context, this.outputDataType);
+        DeserializationSchema<List<RowData>> deserializationSchema =
+                this.decodingFormat.createRuntimeDecoder(context, this.outputDataType);
 
         if (lookupOptions.getLookupAsync()) {
-            return AsyncTableFunctionProvider.of(new HttpRowDataAsyncLookupFunction(
-            	tableSchema, keyNames, requestOptions, lookupOptions, optionalOptions, deserializationSchema));
+            return AsyncTableFunctionProvider.of(
+                    new HttpRowDataAsyncLookupFunction(
+                            tableSchema,
+                            keyNames,
+                            requestOptions,
+                            lookupOptions,
+                            optionalOptions,
+                            deserializationSchema));
         } else {
-			return TableFunctionProvider.of(new HttpRowDataLookupFunction(
-				tableSchema, keyNames, requestOptions, lookupOptions, optionalOptions, deserializationSchema));
+            return TableFunctionProvider.of(
+                    new HttpRowDataLookupFunction(
+                            tableSchema,
+                            keyNames,
+                            requestOptions,
+                            lookupOptions,
+                            optionalOptions,
+                            deserializationSchema));
         }
     }
 
-	@Override
-	public boolean supportsNestedProjection() {
-		return false;
-	}
+    @Override
+    public boolean supportsNestedProjection() {
+        return false;
+    }
 
-	@Override
-	public void applyProjection(int[][] projectedFields) {
-	}
+    @Override
+    public void applyProjection(int[][] projectedFields) {}
 
-	@Override
-	public DynamicTableSource copy() {
-		return new HttpDynamicTableSource(
-			tableSchema,
-			tableOptions,
-			outputDataType,
-			decodingFormat);
-	}
+    @Override
+    public DynamicTableSource copy() {
+        return new HttpDynamicTableSource(
+                tableSchema, tableOptions, outputDataType, decodingFormat);
+    }
 
-	@Override
-	public String asSummaryString() {
-		return "HTTP";
-	}
+    @Override
+    public String asSummaryString() {
+        return "HTTP";
+    }
 
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (!(o instanceof HttpDynamicTableSource)) {
-			return false;
-		}
-		HttpDynamicTableSource that = (HttpDynamicTableSource) o;
-		return Objects.equals(tableSchema, that.tableSchema)
-			&& Objects.equals(tableOptions, that.tableOptions)
-			&& Objects.equals(requestOptions, that.requestOptions)
-			&& Objects.equals(lookupOptions, that.lookupOptions)
-			&& Objects.equals(optionalOptions, that.optionalOptions)
-			&& Objects.equals(outputDataType, that.outputDataType)
-			&& Objects.equals(decodingFormat, that.decodingFormat);
-	}
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof HttpDynamicTableSource)) {
+            return false;
+        }
+        HttpDynamicTableSource that = (HttpDynamicTableSource) o;
+        return Objects.equals(tableSchema, that.tableSchema)
+                && Objects.equals(tableOptions, that.tableOptions)
+                && Objects.equals(requestOptions, that.requestOptions)
+                && Objects.equals(lookupOptions, that.lookupOptions)
+                && Objects.equals(optionalOptions, that.optionalOptions)
+                && Objects.equals(outputDataType, that.outputDataType)
+                && Objects.equals(decodingFormat, that.decodingFormat);
+    }
 
-	@Override
-	public int hashCode() {
-		return Objects.hash(
-			tableSchema,
-			tableOptions,
-			requestOptions,
-			lookupOptions,
-			optionalOptions,
-			outputDataType,
-			decodingFormat);
-	}
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                tableSchema,
+                tableOptions,
+                requestOptions,
+                lookupOptions,
+                optionalOptions,
+                outputDataType,
+                decodingFormat);
+    }
 }

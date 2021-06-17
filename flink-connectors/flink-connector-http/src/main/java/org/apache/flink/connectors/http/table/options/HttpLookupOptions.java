@@ -32,8 +32,7 @@ public class HttpLookupOptions implements Serializable {
     private final long cacheExpireMs;
     private final boolean lookupAsync;
 
-    public HttpLookupOptions(
-            long cacheMaxSize, long cacheExpireMs, boolean lookupAsync) {
+    public HttpLookupOptions(long cacheMaxSize, long cacheExpireMs, boolean lookupAsync) {
         this.cacheMaxSize = cacheMaxSize;
         this.cacheExpireMs = cacheExpireMs;
         this.lookupAsync = lookupAsync;
@@ -58,7 +57,7 @@ public class HttpLookupOptions implements Serializable {
     @Override
     public boolean equals(Object o) {
         if (o instanceof HttpLookupOptions) {
-			HttpLookupOptions options = (HttpLookupOptions) o;
+            HttpLookupOptions options = (HttpLookupOptions) o;
             return Objects.equals(cacheMaxSize, options.cacheMaxSize)
                     && Objects.equals(cacheExpireMs, options.cacheExpireMs)
                     && Objects.equals(lookupAsync, options.lookupAsync);
@@ -67,13 +66,10 @@ public class HttpLookupOptions implements Serializable {
         }
     }
 
-	@Override
-	public int hashCode() {
-		return Objects.hash(
-			cacheMaxSize,
-			cacheExpireMs,
-			lookupAsync);
-	}
+    @Override
+    public int hashCode() {
+        return Objects.hash(cacheMaxSize, cacheExpireMs, lookupAsync);
+    }
 
     /** Builder of {@link HttpLookupOptions}. */
     public static class Builder {

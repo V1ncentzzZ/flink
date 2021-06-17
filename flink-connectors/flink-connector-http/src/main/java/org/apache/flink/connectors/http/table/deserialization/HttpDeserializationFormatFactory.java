@@ -34,6 +34,7 @@ import java.util.List;
  * @see FactoryUtil#createTableFactoryHelper(DynamicTableFactory, DynamicTableFactory.Context)
  */
 @PublicEvolving
-public interface HttpDeserializationFormatFactory extends DecodingFormatFactory<DeserializationSchema<List<RowData>>> {
-  // interface is used for discovery but is already fully specified by the generics
+public interface HttpDeserializationFormatFactory
+        extends DecodingFormatFactory<DeserializationSchema<List<RowData>>> {
+    // interface is used for discovery but is already fully specified by the generics
 }

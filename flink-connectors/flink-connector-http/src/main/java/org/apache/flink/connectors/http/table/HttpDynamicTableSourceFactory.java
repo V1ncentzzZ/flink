@@ -66,22 +66,22 @@ public class HttpDynamicTableSourceFactory implements DynamicTableSourceFactory 
     public DynamicTableSource createDynamicTableSource(Context context) {
         TableFactoryHelper helper = createTableFactoryHelper(this, context);
 
-		helper.validateExcept(FORMAT_PROPERTIES_PREFIX);
+        helper.validateExcept(FORMAT_PROPERTIES_PREFIX);
         helper.validate();
 
         final ReadableConfig tableOptions = helper.getOptions();
 
-		DecodingFormat<DeserializationSchema<List<RowData>>> decodingFormat = helper.discoverDecodingFormat(
-			HttpDeserializationFormatFactory.class,
-			FORMAT);
+        DecodingFormat<DeserializationSchema<List<RowData>>> decodingFormat =
+                helper.discoverDecodingFormat(HttpDeserializationFormatFactory.class, FORMAT);
 
-		TableSchema physicalSchema = TableSchemaUtils.getPhysicalSchema(context.getCatalogTable().getSchema());
+        TableSchema physicalSchema =
+                TableSchemaUtils.getPhysicalSchema(context.getCatalogTable().getSchema());
 
-		DataType producedDataType = context.getCatalogTable().getSchema().toPhysicalRowDataType();
+        DataType producedDataType = context.getCatalogTable().getSchema().toPhysicalRowDataType();
 
-        return new HttpDynamicTableSource(physicalSchema, tableOptions, producedDataType, decodingFormat);
+        return new HttpDynamicTableSource(
+                physicalSchema, tableOptions, producedDataType, decodingFormat);
     }
-
 
     @Override
     public String factoryIdentifier() {
@@ -115,7 +115,7 @@ public class HttpDynamicTableSourceFactory implements DynamicTableSourceFactory 
         set.add(FAIL_ON_MISSING_FIELD);
         set.add(IGNORE_PARSE_ERRORS);
         set.add(TIMESTAMP_FORMAT);
-		set.add(RESPONSE_DATA_FIELDS);
+        set.add(RESPONSE_DATA_FIELDS);
         return set;
     }
 }

@@ -47,87 +47,87 @@ import static org.apache.flink.formats.json.JsonOptions.TIMESTAMP_FORMAT;
 import static org.apache.flink.formats.json.JsonOptions.TIMESTAMP_FORMAT_ENUM;
 
 /**
- * Table format factory for providing configured instances of JSON to RowData
- * {@link SerializationSchema} and {@link DeserializationSchema}.
+ * Table format factory for providing configured instances of JSON to RowData {@link
+ * SerializationSchema} and {@link DeserializationSchema}.
  */
 public class HttpJsonFormatFactory implements HttpDeserializationFormatFactory {
 
-	public static final String IDENTIFIER = "http-json";
+    public static final String IDENTIFIER = "http-json";
 
-	@SuppressWarnings("unchecked")
-	@Override
-	public DecodingFormat<DeserializationSchema<List<RowData>>> createDecodingFormat(
-			DynamicTableFactory.Context context,
-			ReadableConfig formatOptions) {
-		FactoryUtil.validateFactoryOptions(this, formatOptions);
-		validateFormatOptions(formatOptions);
+    @SuppressWarnings("unchecked")
+    @Override
+    public DecodingFormat<DeserializationSchema<List<RowData>>> createDecodingFormat(
+            DynamicTableFactory.Context context, ReadableConfig formatOptions) {
+        FactoryUtil.validateFactoryOptions(this, formatOptions);
+        validateFormatOptions(formatOptions);
 
-		final boolean failOnMissingField = formatOptions.get(FAIL_ON_MISSING_FIELD);
-		final boolean ignoreParseErrors = formatOptions.get(IGNORE_PARSE_ERRORS);
-		final List<String> responseDataFields = formatOptions.get(RESPONSE_DATA_FIELDS);
-		TimestampFormat timestampOption = JsonOptions.getTimestampFormat(formatOptions);
+        final boolean failOnMissingField = formatOptions.get(FAIL_ON_MISSING_FIELD);
+        final boolean ignoreParseErrors = formatOptions.get(IGNORE_PARSE_ERRORS);
+        final List<String> responseDataFields = formatOptions.get(RESPONSE_DATA_FIELDS);
+        TimestampFormat timestampOption = JsonOptions.getTimestampFormat(formatOptions);
 
-		return new DecodingFormat<DeserializationSchema<List<RowData>>>() {
-			@Override
-			public DeserializationSchema<List<RowData>> createRuntimeDecoder(
-					DynamicTableSource.Context context,
-					DataType producedDataType) {
-				final RowType rowType = (RowType) producedDataType.getLogicalType();
-				final TypeInformation<List<RowData>> rowDataTypeInfo =
-						(TypeInformation<List<RowData>>) context.createTypeInformation(producedDataType);
-				return new HttpJsonRowDataDeserializationSchema(
-						rowType,
-						rowDataTypeInfo,
-						failOnMissingField,
-						ignoreParseErrors,
-						timestampOption,
-						responseDataFields
-					);
-			}
+        return new DecodingFormat<DeserializationSchema<List<RowData>>>() {
+            @Override
+            public DeserializationSchema<List<RowData>> createRuntimeDecoder(
+                    DynamicTableSource.Context context, DataType producedDataType) {
+                final RowType rowType = (RowType) producedDataType.getLogicalType();
+                final TypeInformation<List<RowData>> rowDataTypeInfo =
+                        context.createTypeInformation(producedDataType);
+                return new HttpJsonRowDataDeserializationSchema(
+                        rowType,
+                        rowDataTypeInfo,
+                        failOnMissingField,
+                        ignoreParseErrors,
+                        timestampOption,
+                        responseDataFields);
+            }
 
-			@Override
-			public ChangelogMode getChangelogMode() {
-				return ChangelogMode.insertOnly();
-			}
-		};
-	}
+            @Override
+            public ChangelogMode getChangelogMode() {
+                return ChangelogMode.insertOnly();
+            }
+        };
+    }
 
-	@Override
-	public String factoryIdentifier() {
-		return IDENTIFIER;
-	}
+    @Override
+    public String factoryIdentifier() {
+        return IDENTIFIER;
+    }
 
-	@Override
-	public Set<ConfigOption<?>> requiredOptions() {
-		return Collections.emptySet();
-	}
+    @Override
+    public Set<ConfigOption<?>> requiredOptions() {
+        return Collections.emptySet();
+    }
 
-	@Override
-	public Set<ConfigOption<?>> optionalOptions() {
-		Set<ConfigOption<?>> options = new HashSet<>();
-		options.add(FAIL_ON_MISSING_FIELD);
-		options.add(IGNORE_PARSE_ERRORS);
-		options.add(TIMESTAMP_FORMAT);
-		return options;
-	}
+    @Override
+    public Set<ConfigOption<?>> optionalOptions() {
+        Set<ConfigOption<?>> options = new HashSet<>();
+        options.add(FAIL_ON_MISSING_FIELD);
+        options.add(IGNORE_PARSE_ERRORS);
+        options.add(TIMESTAMP_FORMAT);
+        return options;
+    }
 
-	// ------------------------------------------------------------------------
-	//  Validation
-	// ------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    //  Validation
+    // ------------------------------------------------------------------------
 
-	static void validateFormatOptions(ReadableConfig tableOptions) {
-		boolean failOnMissingField = tableOptions.get(FAIL_ON_MISSING_FIELD);
-		boolean ignoreParseErrors = tableOptions.get(IGNORE_PARSE_ERRORS);
-		String timestampFormat = tableOptions.get(TIMESTAMP_FORMAT);
-		if (ignoreParseErrors && failOnMissingField) {
-			throw new ValidationException(FAIL_ON_MISSING_FIELD.key()
-					+ " and "
-					+ IGNORE_PARSE_ERRORS.key()
-					+ " shouldn't both be true.");
-		}
-		if (!TIMESTAMP_FORMAT_ENUM.contains(timestampFormat)){
-			throw new ValidationException(String.format("Unsupported value '%s' for %s. Supported values are [SQL, ISO-8601].",
-				timestampFormat, TIMESTAMP_FORMAT.key()));
-		}
-	}
+    static void validateFormatOptions(ReadableConfig tableOptions) {
+        boolean failOnMissingField = tableOptions.get(FAIL_ON_MISSING_FIELD);
+        boolean ignoreParseErrors = tableOptions.get(IGNORE_PARSE_ERRORS);
+        String timestampFormat = tableOptions.get(TIMESTAMP_FORMAT);
+        if (ignoreParseErrors && failOnMissingField) {
+            throw new ValidationException(
+                    FAIL_ON_MISSING_FIELD.key()
+                            + " and "
+                            + IGNORE_PARSE_ERRORS.key()
+                            + " shouldn't both be true.");
+        }
+        if (!TIMESTAMP_FORMAT_ENUM.contains(timestampFormat)) {
+            throw new ValidationException(
+                    String.format(
+                            "Unsupported value '%s' for %s. Supported values are [SQL, ISO-8601].",
+                            timestampFormat, TIMESTAMP_FORMAT.key()));
+        }
+    }
 }

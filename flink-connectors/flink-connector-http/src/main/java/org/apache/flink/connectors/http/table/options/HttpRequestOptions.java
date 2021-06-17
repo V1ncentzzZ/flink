@@ -32,86 +32,86 @@ public class HttpRequestOptions implements Serializable {
 
     private final String requestUrl;
     private final String requestMethod;
-	private final List<String> requestParameters;
+    private final List<String> requestParameters;
     private final Map<String, String> requestHeaders;
-	private final Long requestBatchSize;
-	private final Long requestSendInterval;
-	private final Integer requestTimeout;
-	private final Integer requestMaxRetries;
-	private final Integer requestSocketTimeout;
-	private final Integer requestConnectTimout;
+    private final Long requestBatchSize;
+    private final Long requestSendInterval;
+    private final Integer requestTimeout;
+    private final Integer requestMaxRetries;
+    private final Integer requestSocketTimeout;
+    private final Integer requestConnectTimout;
 
     public HttpRequestOptions(
-		String requestUrl,
-		String requestMethod,
-		List<String> requestParameters,
-		Map<String, String> requestHeaders,
-		Long requestBatchSize,
-		Long requestSendInterval,
-		Integer requestTimeout,
-		Integer requestMaxRetries,
-		Integer requestSocketTimeout,
-		Integer requestConnectTimout) {
+            String requestUrl,
+            String requestMethod,
+            List<String> requestParameters,
+            Map<String, String> requestHeaders,
+            Long requestBatchSize,
+            Long requestSendInterval,
+            Integer requestTimeout,
+            Integer requestMaxRetries,
+            Integer requestSocketTimeout,
+            Integer requestConnectTimout) {
         this.requestUrl = requestUrl;
         this.requestMethod = requestMethod;
         this.requestParameters = requestParameters;
         this.requestHeaders = requestHeaders;
         this.requestBatchSize = requestBatchSize;
         this.requestSendInterval = requestSendInterval;
-        this.requestTimeout =  requestTimeout;
+        this.requestTimeout = requestTimeout;
         this.requestMaxRetries = requestMaxRetries;
         this.requestSocketTimeout = requestSocketTimeout;
         this.requestConnectTimout = requestConnectTimout;
     }
 
-	public String getRequestUrl() {
-		return requestUrl;
-	}
+    public String getRequestUrl() {
+        return requestUrl;
+    }
 
-	public String getRequestMethod() {
-		return requestMethod;
-	}
+    public String getRequestMethod() {
+        return requestMethod;
+    }
 
-	public List<String> getRequestParameters() {
-		return requestParameters;
-	}
+    public List<String> getRequestParameters() {
+        return requestParameters;
+    }
 
-	public Map<String, String> getRequestHeaders() {
-		return requestHeaders;
-	}
+    public Map<String, String> getRequestHeaders() {
+        return requestHeaders;
+    }
 
-	public Long getRequestBatchSize() {
-		return requestBatchSize;
-	}
+    public Long getRequestBatchSize() {
+        return requestBatchSize;
+    }
 
-	public Long getRequestSendInterval() {
-		return requestSendInterval;
-	}
+    public Long getRequestSendInterval() {
+        return requestSendInterval;
+    }
 
-	public Integer getRequestTimeout() {
-		return requestTimeout;
-	}
+    public Integer getRequestTimeout() {
+        return requestTimeout;
+    }
 
-	public Integer getRequestMaxRetries() {
-		return requestMaxRetries;
-	}
+    public Integer getRequestMaxRetries() {
+        return requestMaxRetries;
+    }
 
-	public Integer getRequestSocketTimeout() {
-		return requestSocketTimeout;
-	}
+    public Integer getRequestSocketTimeout() {
+        return requestSocketTimeout;
+    }
 
-	public Integer getRequestConnectTimout() {
-		return requestConnectTimout;
-	}
+    public Integer getRequestConnectTimout() {
+        return requestConnectTimout;
+    }
 
-	public static Builder builder() {
+    public static Builder builder() {
         return new Builder();
     }
 
     @Override
     public boolean equals(Object o) {
         if (o instanceof HttpRequestOptions) {
-			HttpRequestOptions options = (HttpRequestOptions) o;
+            HttpRequestOptions options = (HttpRequestOptions) o;
             return Objects.equals(requestUrl, options.requestUrl)
                     && Objects.equals(requestMethod, options.requestMethod)
                     && Objects.equals(requestParameters, options.requestParameters)
@@ -127,33 +127,33 @@ public class HttpRequestOptions implements Serializable {
         }
     }
 
-	@Override
-	public int hashCode() {
-		return Objects.hash(
-			requestUrl,
-			requestMethod,
-			requestParameters,
-			requestHeaders,
-			requestBatchSize,
-			requestSendInterval,
-			requestTimeout,
-			requestMaxRetries,
-			requestSocketTimeout,
-			requestConnectTimout);
-	}
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                requestUrl,
+                requestMethod,
+                requestParameters,
+                requestHeaders,
+                requestBatchSize,
+                requestSendInterval,
+                requestTimeout,
+                requestMaxRetries,
+                requestSocketTimeout,
+                requestConnectTimout);
+    }
 
     /** Builder of {@link HttpRequestOptions}. */
     public static class Builder {
-		private String requestUrl;
-		private String requestMethod;
-		private List<String> requestParameters;
-		private Map<String, String> requestHeaders;
-		private Long requestBatchSize;
-		private Long requestSendInterval;
-		private Integer requestTimeout;
-		private Integer requestMaxRetries;
-		private Integer requestSocketTimeout;
-		private Integer requestConnectTimout;
+        private String requestUrl;
+        private String requestMethod;
+        private List<String> requestParameters;
+        private Map<String, String> requestHeaders;
+        private Long requestBatchSize;
+        private Long requestSendInterval;
+        private Integer requestTimeout;
+        private Integer requestMaxRetries;
+        private Integer requestSocketTimeout;
+        private Integer requestConnectTimout;
 
         public Builder setRequestUrl(String requestUrl) {
             this.requestUrl = requestUrl;
@@ -165,52 +165,52 @@ public class HttpRequestOptions implements Serializable {
             return this;
         }
 
-		public Builder setRequestParameters(List<String> requestParameters) {
-			this.requestParameters = requestParameters;
-			return this;
-		}
+        public Builder setRequestParameters(List<String> requestParameters) {
+            this.requestParameters = requestParameters;
+            return this;
+        }
 
         public Builder setRequestHeaders(Map<String, String> requestHeaders) {
             this.requestHeaders = requestHeaders;
             return this;
         }
 
-		public void setRequestBatchSize(Long requestBatchSize) {
-			this.requestBatchSize = requestBatchSize;
-		}
+        public void setRequestBatchSize(Long requestBatchSize) {
+            this.requestBatchSize = requestBatchSize;
+        }
 
-		public void setRequestSendInterval(Long requestSendInterval) {
-			this.requestSendInterval = requestSendInterval;
-		}
+        public void setRequestSendInterval(Long requestSendInterval) {
+            this.requestSendInterval = requestSendInterval;
+        }
 
-		public void setRequestTimeout(Integer requestTimeout) {
-			this.requestTimeout = requestTimeout;
-		}
+        public void setRequestTimeout(Integer requestTimeout) {
+            this.requestTimeout = requestTimeout;
+        }
 
-		public void setRequestMaxRetries(Integer requestMaxRetries) {
-			this.requestMaxRetries = requestMaxRetries;
-		}
+        public void setRequestMaxRetries(Integer requestMaxRetries) {
+            this.requestMaxRetries = requestMaxRetries;
+        }
 
-		public void setRequestSocketTimeout(Integer requestSocketTimeout) {
-			this.requestSocketTimeout = requestSocketTimeout;
-		}
+        public void setRequestSocketTimeout(Integer requestSocketTimeout) {
+            this.requestSocketTimeout = requestSocketTimeout;
+        }
 
-		public void setRequestConnectTimout(Integer requestConnectTimout) {
-			this.requestConnectTimout = requestConnectTimout;
-		}
+        public void setRequestConnectTimout(Integer requestConnectTimout) {
+            this.requestConnectTimout = requestConnectTimout;
+        }
 
-		public HttpRequestOptions build() {
+        public HttpRequestOptions build() {
             return new HttpRequestOptions(
-            	requestUrl,
-				requestMethod,
-				requestParameters,
-				requestHeaders,
-				requestBatchSize,
-				requestSendInterval,
-				requestTimeout,
-				requestMaxRetries,
-				requestSocketTimeout,
-				requestConnectTimout);
+                    requestUrl,
+                    requestMethod,
+                    requestParameters,
+                    requestHeaders,
+                    requestBatchSize,
+                    requestSendInterval,
+                    requestTimeout,
+                    requestMaxRetries,
+                    requestSocketTimeout,
+                    requestConnectTimout);
         }
     }
 }
