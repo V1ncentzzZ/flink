@@ -366,7 +366,7 @@ public class HttpRowDataAsyncLookupFunction extends AsyncTableFunction<RowData> 
                                                                                 lookupKeyTypes[i],
                                                                                 lookupKeyIndexes[
                                                                                         i]),
-                                                                        k[i]);
+                                                                        k[i].toString());
                                                     }
                                                     if (checkKeys) {
                                                         rows.add(rowData);

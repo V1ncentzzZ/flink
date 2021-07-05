@@ -10,6 +10,8 @@ import org.apache.flink.util.CloseableIterator;
 
 import org.apache.flink.shaded.guava18.com.google.common.collect.Lists;
 
+import org.junit.Test;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -30,6 +32,60 @@ public class HttpLookupTableTest {
                     + "'fields.id.min'='1', "
                     + "'fields.id.max'='10' "
                     + ")";
+
+    @Test
+    public void testSyncLookupGet() throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        EnvironmentSettings envSettings =
+                EnvironmentSettings.newInstance().useBlinkPlanner().inStreamingMode().build();
+        StreamTableEnvironment tEnv = StreamTableEnvironment.create(env, envSettings);
+
+        Table t =
+                tEnv.fromDataStream(
+                        env.fromCollection(
+                                Arrays.asList(
+                                        new Tuple2<>(1, "1"),
+                                        new Tuple2<>(2, "5"),
+                                        new Tuple2<>(3, "8"),
+                                        new Tuple2<>(4, "9"),
+                                        new Tuple2<>(5, "9"))),
+                        $("id"),
+                        $("name"),
+                        $("proctime").proctime());
+
+        tEnv.createTemporaryView("T", t);
+
+        String sql2 =
+                "CREATE TABLE http_test (`orderId` int, `orderName` string, `orderStatus` int, `desc` string) "
+                        + "WITH ("
+                        + "'connector'='http', "
+                        + "'lookup.async'='true',"
+                        + "'request.url'='http://localhost:8080/order_get', "
+                        + "'request.method'='GET', "
+                        + "'request.headers'='Content-Type:application/json', "
+                        + "'lookup.cache.max-rows'='-1', "
+                        + "'lookup.cache.ttl'='1 s', "
+                        + "'format'='http-json', "
+                        + "'http-json.response.data.fields'='data' "
+                        + ")";
+        tEnv.executeSql(sql2);
+
+        tEnv.executeSql(dataGenSql);
+
+        String sqlQuery =
+                "SELECT source.id, L.`orderId`, L.orderName, L.orderStatus, L.desc FROM T AS source "
+                        + "JOIN http_test for system_time as of source.proctime AS L "
+                        + "ON source.id = L.orderId";
+
+        CloseableIterator<Row> collected = tEnv.executeSql(sqlQuery).collect();
+        List<String> result =
+                Lists.newArrayList(collected).stream()
+                        .map(Row::toString)
+                        .sorted()
+                        .collect(Collectors.toList());
+
+        System.out.println("size: " + result.size() + " result: " + result);
+    }
 
     public void testSyncLookup() throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -127,6 +183,60 @@ public class HttpLookupTableTest {
                 "SELECT source.id, L.`orderId`, L.orderName, L.orderStatus, L.desc FROM T AS source "
                         + "JOIN http_test for system_time as of source.proctime AS L "
                         + "ON source.id = L.orderId";
+
+        CloseableIterator<Row> collected = tEnv.executeSql(sqlQuery).collect();
+        List<String> result =
+                Lists.newArrayList(collected).stream()
+                        .map(Row::toString)
+                        .sorted()
+                        .collect(Collectors.toList());
+
+        System.out.println("size: " + result.size() + " result: " + result);
+    }
+
+    @Test
+    public void testAsyncLookup1() throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        EnvironmentSettings envSettings =
+                EnvironmentSettings.newInstance().useBlinkPlanner().inStreamingMode().build();
+        StreamTableEnvironment tEnv = StreamTableEnvironment.create(env, envSettings);
+
+        Table t =
+                tEnv.fromDataStream(
+                        env.fromCollection(
+                                Arrays.asList(
+                                        new Tuple2<>("aa bb", "1"),
+                                        new Tuple2<>("xx yy", "5"),
+                                        new Tuple2<>("没问题", "8"),
+                                        new Tuple2<>("4", "9"),
+                                        new Tuple2<>("5", "9"))),
+                        $("content"),
+                        $("cc"),
+                        $("proctime").proctime());
+
+        tEnv.createTemporaryView("T", t);
+
+        String sql2 =
+                "CREATE TABLE http_test (`content` string, `cc` string, `token` string) "
+                        + "WITH ("
+                        + "'connector'='http', "
+                        + "'lookup.async'='true',"
+                        + "'request.url'='http://10.129.99.109:57189/api/v2/proc', "
+                        + "'request.method'='POST', "
+                        + "'request.parameters'='contents;cc', "
+                        + "'request.headers'='Content-Type:application/json', "
+                        + "'request.batch.size'='2', "
+                        + "'lookup.cache.max-rows'='100', "
+                        + "'lookup.cache.ttl'='1 s', "
+                        + "'format'='http-json', "
+                        + "'http-json.ignore-parse-errors'='true' "
+                        + ")";
+        tEnv.executeSql(sql2);
+
+        String sqlQuery =
+                "SELECT * FROM T as left_source "
+                        + "LEFT JOIN http_test FOR SYSTEM_TIME AS OF left_source.proctime as right_source "
+                        + "ON left_source.content = right_source.content and left_source.cc = right_source.cc";
 
         CloseableIterator<Row> collected = tEnv.executeSql(sqlQuery).collect();
         List<String> result =

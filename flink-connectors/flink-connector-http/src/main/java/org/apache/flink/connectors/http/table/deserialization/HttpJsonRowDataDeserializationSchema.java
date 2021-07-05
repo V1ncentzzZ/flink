@@ -125,8 +125,12 @@ public class HttpJsonRowDataDeserializationSchema implements DeserializationSche
                 }
             }
             List<RowData> result = new ArrayList<>();
-            for (int i = 0; i < root.size(); i++) {
-                result.add((RowData) runtimeConverter.convert(root.get(i)));
+            if (root instanceof ArrayNode) {
+                for (int i = 0; i < root.size(); i++) {
+                    result.add((RowData) runtimeConverter.convert(root.get(i)));
+                }
+            } else {
+                result.add((RowData) runtimeConverter.convert(root));
             }
             return result;
         } catch (Throwable t) {
