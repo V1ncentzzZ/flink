@@ -104,20 +104,20 @@ public class RedisLookupTableTest {
         tEnv.createTemporaryView("T", t);
 
         String sql2 =
-                "CREATE TABLE redis_test (`orderId` string, `orderName` string) "
+                "CREATE TABLE redis_test (`orderId` string, `orderName` string, desc string, PRIMARY KEY (orderId) NOT ENFORCED) "
                         + "WITH ("
                         + "'connector'='shopee-redis', "
                         + "'redis.nodes'='localhost:6379', "
                         + "'redis.mode'='single', "
-                        + "'lookup.batch.size'='5', "
-                        + "'lookup.async'='true', "
+                        + "'lookup.batch.size'='-1', "
+                        + "'lookup.async'='false', "
                         + "'format'='csv', "
                         + "'csv.field-delimiter'='_' "
                         + ")";
         tEnv.executeSql(sql2);
 
         String sqlQuery =
-                "SELECT source.id, L.`orderId`, L.orderName FROM T AS source "
+                "SELECT * FROM T AS source "
                         + "JOIN redis_test for system_time as of source.proctime AS L "
                         + "ON source.id = L.orderId";
 

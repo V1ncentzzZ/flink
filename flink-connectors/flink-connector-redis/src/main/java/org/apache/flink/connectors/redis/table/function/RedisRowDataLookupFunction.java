@@ -27,6 +27,7 @@ import org.apache.flink.metrics.Gauge;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.utils.JoinedRowData;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.functions.TableFunction;
 import org.apache.flink.utils.RedisMode;
@@ -160,7 +161,7 @@ public class RedisRowDataLookupFunction extends TableFunction<RowData> {
                             ? new GenericRowData(fieldCount)
                             : deserializationSchema.deserialize(
                                     keyValue.getBytes(StandardCharsets.UTF_8));
-            collect(row);
+            collect(new JoinedRowData(GenericRowData.of(key), row));
             if (cache != null) {
                 cache.put(GenericRowData.of(key), Collections.singletonList(row));
             }

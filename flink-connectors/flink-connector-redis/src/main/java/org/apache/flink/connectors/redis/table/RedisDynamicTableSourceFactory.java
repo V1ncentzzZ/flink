@@ -21,6 +21,8 @@ package org.apache.flink.connectors.redis.table;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ReadableConfig;
+import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.api.TableColumn;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.connector.format.DecodingFormat;
 import org.apache.flink.table.connector.source.DynamicTableSource;
@@ -32,6 +34,7 @@ import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.utils.TableSchemaUtils;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import static org.apache.flink.connectors.redis.table.options.RedisOptions.HASH_NAME;
@@ -46,6 +49,8 @@ import static org.apache.flink.connectors.redis.table.options.RedisOptions.REDIS
 import static org.apache.flink.connectors.redis.table.options.RedisOptions.REDIS_MODE;
 import static org.apache.flink.connectors.redis.table.options.RedisOptions.REDIS_NODES;
 import static org.apache.flink.connectors.redis.table.options.RedisOptions.REDIS_PASSWORD;
+import static org.apache.flink.table.api.DataTypes.FIELD;
+import static org.apache.flink.table.api.DataTypes.ROW;
 import static org.apache.flink.table.factories.FactoryUtil.FORMAT;
 import static org.apache.flink.table.factories.FactoryUtil.createTableFactoryHelper;
 
@@ -63,16 +68,31 @@ public class RedisDynamicTableSourceFactory implements DynamicTableSourceFactory
         helper.validateExcept(tableOptions.get(FORMAT));
         helper.validate();
 
+
         DecodingFormat<DeserializationSchema<RowData>> decodingFormat =
                 helper.discoverDecodingFormat(DeserializationFormatFactory.class, FORMAT);
 
+        TableSchema schema = context.getCatalogTable().getSchema();
         TableSchema physicalSchema =
-                TableSchemaUtils.getPhysicalSchema(context.getCatalogTable().getSchema());
+                TableSchemaUtils.getPhysicalSchema(schema);
 
-        DataType producedDataType = context.getCatalogTable().getSchema().toPhysicalRowDataType();
+        DataType producedDataType = toPhysicalRowDataType(schema);
 
         return new RedisDynamicTableSource(
                 physicalSchema, tableOptions, producedDataType, decodingFormat);
+    }
+
+    public DataType toPhysicalRowDataType(TableSchema schema) {
+        List<TableColumn> columns = schema.getTableColumns();
+        String pkName = schema.getPrimaryKey().get().getColumns().get(0);
+        final DataTypes.Field[] fields =
+                columns.stream()
+                        .filter(e -> !e.getName().equals(pkName))
+                        .filter(TableColumn::isPhysical)
+                        .map(column -> FIELD(column.getName(), column.getType()))
+                        .toArray(DataTypes.Field[]::new);
+        // The row should be never null.
+        return ROW(fields).notNull();
     }
 
     @Override

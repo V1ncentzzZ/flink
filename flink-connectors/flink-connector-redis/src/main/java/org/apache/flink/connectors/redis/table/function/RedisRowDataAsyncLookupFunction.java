@@ -27,6 +27,7 @@ import org.apache.flink.metrics.Gauge;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.utils.JoinedRowData;
 import org.apache.flink.table.functions.AsyncTableFunction;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.types.DataType;
@@ -256,7 +257,8 @@ public class RedisRowDataAsyncLookupFunction extends AsyncTableFunction<RowData>
                                 RowData row =
                                         deserializationSchema.deserialize(
                                                 result.getBytes(StandardCharsets.UTF_8));
-                                List<RowData> rows = Collections.singletonList(row);
+                                List<RowData> rows =
+                                        Collections.singletonList(new JoinedRowData(GenericRowData.of(keys[0]), row));
                                 resultFuture.complete(rows);
                                 if (cache != null) {
                                     cache.put(GenericRowData.of(keys), rows);
@@ -347,9 +349,7 @@ public class RedisRowDataAsyncLookupFunction extends AsyncTableFunction<RowData>
                                                                                     : new GenericRowData(
                                                                                             fieldCount);
                                                                     List<RowData> rows =
-                                                                            Collections
-                                                                                    .singletonList(
-                                                                                            row);
+                                                                            Collections.singletonList(new JoinedRowData(GenericRowData.of(r.getKey()), row));
                                                                     LOG.info("rows: {}", rows);
                                                                     v.complete(rows);
                                                                     if (cache != null) {
